@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>Select region</title>
+  <style>
+    :root {
+      --tally: #FF3B30;
+      --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      overflow: hidden;
+      cursor: crosshair;
+      user-select: none;
+      background: rgba(10, 11, 13, 0.35);
+    }
+    /* Four shades around the selection keep the chosen area at full brightness. */
+    .shade {
+      position: fixed;
+      background: rgba(10, 11, 13, 0.55);
+      pointer-events: none;
+    }
+    #box {
+      position: fixed;
+      border: 1px solid var(--tally);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 18px rgba(255, 59, 48, 0.35);
+      pointer-events: none;
+      display: none;
+    }
+    #dims {
+      position: fixed;
+      display: none;
+      padding: 4px 8px;
+      background: #16171B;
+      color: #E8E6E1;
+      border: 1px solid #2C2F36;
+      border-radius: 3px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    #prompt {
+      position: fixed;
+      top: 28px; left: 50%;
+      transform: translateX(-50%);
+      padding: 9px 16px;
+      background: #16171B;
+      border: 1px solid #2C2F36;
+      border-radius: 5px;
+      color: #8A8E97;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="shade" id="sh-top"></div>
+  <div class="shade" id="sh-bottom"></div>
+  <div class="shade" id="sh-left"></div>
+  <div class="shade" id="sh-right"></div>
+  <div id="box"></div>
+  <div id="dims"></div>
+  <div id="prompt">Drag to set the capture area · Esc to cancel</div>
+
+  <script>
+    const box = document.getElementById('box');
+    const dims = document.getElementById('dims');
+    const prompt = document.getElementById('prompt');
+    const shades = {
+      top: document.getElementById('sh-top'),
+      bottom: document.getElementById('sh-bottom'),
+      left: document.getElementById('sh-left'),
+      right: document.getElementById('sh-right')
+    };
+
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    let startX = 0, startY = 0, dragging = false;
+
+    function layout(x, y, w, h) {
+      box.style.left = x + 'px';
+      box.style.top = y + 'px';
+      box.style.width = w + 'px';
+      box.style.height = h + 'px';
+
+      Object.assign(shades.top.style, { left: 0, top: 0, width: W + 'px', height: y + 'px' });
+      Object.assign(shades.bottom.style, { left: 0, top: (y + h) + 'px', width: W + 'px', height: (H - y - h) + 'px' });
+      Object.assign(shades.left.style, { left: 0, top: y + 'px', width: x + 'px', height: h + 'px' });
+      Object.assign(shades.right.style, { left: (x + w) + 'px', top: y + 'px', width: (W - x - w) + 'px', height: h + 'px' });
+
+      dims.textContent = Math.round(w) + ' × ' + Math.round(h);
+      const below = y + h + 8;
+      dims.style.left = Math.min(x, W - 90) + 'px';
+      dims.style.top = (below + 24 < H ? below : Math.max(0, y - 26)) + 'px';
+    }
+
+    window.addEventListener('mousedown', (e) => {
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      box.style.display = 'block';
+      dims.style.display = 'block';
+      prompt.style.display = 'none';
+      document.body.style.background = 'transparent';
+      layout(startX, startY, 0, 0);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      layout(
+        Math.min(startX, e.clientX),
+        Math.min(startY, e.clientY),
+        Math.abs(e.clientX - startX),
+        Math.abs(e.clientY - startY)
+      );
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+
+      const x = Math.min(startX, e.clientX);
+      const y = Math.min(startY, e.clientY);
+      const w = Math.abs(e.clientX - startX);
+      const h = Math.abs(e.clientY - startY);
+
+      if (w < 12 || h < 12) return window.api.cancelRegion();
+
+      // Fractions rather than pixels: the renderer multiplies these by the
+      // real frame size, so display scaling never has to be untangled.
+      window.api.sendRegion({ x: x / W, y: y / H, w: w / W, h: h / H });
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.api.cancelRegion();
+    });
+  </script>
+</body>
+</html>
