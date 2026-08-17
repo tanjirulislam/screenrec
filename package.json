@@ -19,7 +19,7 @@
   "build": {
     "appId": "com.screenrec.app",
     "productName": "ScreenRec",
-    "copyright": "Copyright © 2026",
+    "copyright": "Copyright \u00a9 2026",
     "publish": null,
     "files": [
       "main.js",
@@ -28,14 +28,25 @@
       "assets/**/*",
       "package.json"
     ],
-    "asarUnpack": ["node_modules/ffmpeg-static/**"],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "assets/icon.ico",
-      "artifactName": "${productName}-${version}-${target}.${ext}"
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -44,10 +55,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "ScreenRec",
-      "uninstallDisplayName": "ScreenRec"
+      "uninstallDisplayName": "ScreenRec",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.${ext}"
     }
+  },
+  "author": {
+    "name": "Tanjirul Islam"
   }
 }
