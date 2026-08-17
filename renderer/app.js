@@ -51,6 +51,7 @@ const state = {
   drawTimer: 0, rafMeter: 0, countTimer: 0, countCancelled: false,
   startedAt: 0, pausedMs: 0, pauseStartedAt: 0, tick: 0,
   outPath: null, borderShown: false, sysGain: null, micGain: null,
+  pendingCrop: null, frames: 0,
   writeQueue: Promise.resolve(), writeFailed: null
 };
 
@@ -169,7 +170,7 @@ function runCountdown(seconds) {
 
     paint();
     showView('countdown');
-    window.api.setCompact(true);
+    window.api.setCompact('count');
 
     state.countTimer = setInterval(() => {
       if (state.countCancelled) { clearInterval(state.countTimer); return resolve(false); }
@@ -201,26 +202,67 @@ async function startRecording() {
   }
 
   const fps = Number(el.fps.value);
+  const useCanvas = el.camOn.checked;   // only the webcam overlay needs compositing
 
   try {
     const wantSys = el.sysAudio.checked;
 
-    const screenStream = await navigator.mediaDevices.getUserMedia({
-      audio: wantSys ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
-      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxFrameRate: fps } }
+    // Tell the main process which source getDisplayMedia should return.
+    await window.api.armCapture({ sourceId, withSystemAudio: wantSys });
+
+    const screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: fps },
+      audio: wantSys
     });
     state.streams.push(screenStream);
 
-    await attachVideo(el.screenVideo, screenStream);
+    const screenTrack = screenStream.getVideoTracks()[0];
+    if (!screenTrack) throw new Error('No screen source was returned. Try again.');
+
+    const settings = screenTrack.getSettings();
+    const frameW = settings.width || 1920;
+    const frameH = settings.height || 1080;
+
+    const source = sourceFor(sourceId);
+    let crop = resolveCrop(mode, source, frameW, frameH);
+    crop.w -= crop.w % 2;
+    crop.h -= crop.h % 2;
+    if (crop.w < 2 || crop.h < 2) throw new Error('The selected area is too small.');
+
+    const cropsAnything = !(crop.x === 0 && crop.y === 0 && crop.w === frameW && crop.h === frameH);
+    state.pendingCrop = cropsAnything ? crop : null;
 
     let camStream = null;
-    if (el.camOn.checked) {
+    let videoTrack = screenTrack;
+
+    if (useCanvas) {
+      // Compositing path, used only when a webcam circle has to be burned in.
       camStream = await navigator.mediaDevices.getUserMedia({
         video: { deviceId: el.camDevice.value ? { exact: el.camDevice.value } : undefined,
                  width: { ideal: 640 }, height: { ideal: 480 } }
       });
       state.streams.push(camStream);
       await attachVideo(el.camVideo, camStream);
+      await attachVideo(el.screenVideo, new MediaStream([screenTrack]));
+
+      el.stage.width = crop.w;
+      el.stage.height = crop.h;
+      const ctx = el.stage.getContext('2d', { alpha: false, desynchronized: true });
+
+      const drawFrame = () => {
+        ctx.drawImage(el.screenVideo, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+        drawCamera(ctx, crop);
+        state.frames += 1;
+      };
+      drawFrame();
+
+      const canvasStream = el.stage.captureStream(fps);
+      videoTrack = canvasStream.getVideoTracks()[0];
+      if (!videoTrack) throw new Error('Could not start compositing. Try again.');
+      state.drawTimer = setInterval(drawFrame, Math.round(1000 / fps));
+
+      // Already cropped on the canvas, so ffmpeg must not crop again.
+      state.pendingCrop = null;
     }
 
     let micStream = null;
@@ -228,42 +270,11 @@ async function startRecording() {
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: el.micDevice.value ? { exact: el.micDevice.value } : undefined,
-          echoCancellation: false,
-          noiseSuppression: true,
-          autoGainControl: true
+          echoCancellation: false, noiseSuppression: true, autoGainControl: true
         }
       });
       state.streams.push(micStream);
     }
-
-    const frameW = el.screenVideo.videoWidth, frameH = el.screenVideo.videoHeight;
-    const source = sourceFor(sourceId);
-    const crop = resolveCrop(mode, source, frameW, frameH);
-    crop.w -= crop.w % 2;
-    crop.h -= crop.h % 2;
-    if (crop.w < 2 || crop.h < 2) throw new Error('The selected area is too small.');
-
-    el.stage.width = crop.w;
-    el.stage.height = crop.h;
-    const ctx = el.stage.getContext('2d', { alpha: false, desynchronized: true });
-
-    const drawFrame = () => {
-      ctx.drawImage(el.screenVideo, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
-      if (camStream) drawCamera(ctx, crop);
-    };
-
-    // Paint before capturing. A canvas that has never been drawn to can hand
-    // back a track producing no frames, which is how a recording ends up with
-    // audio and no video.
-    drawFrame();
-
-    // captureStream(fps) samples at a fixed rate on its own, giving constant
-    // frame rate video. The interval keeps the canvas fresh; it replaced
-    // requestAnimationFrame, which Chromium stalls when the window is covered.
-    const canvasStream = el.stage.captureStream(fps);
-    const videoTrack = canvasStream.getVideoTracks()[0];
-    if (!videoTrack) throw new Error('Could not start capturing the screen. Try again.');
-    state.drawTimer = setInterval(drawFrame, Math.round(1000 / fps));
 
     const audioTracks = [];
     if (wantSys || micStream) {
@@ -271,6 +282,7 @@ async function startRecording() {
       const dest = ac.createMediaStreamDestination();
       const analyser = ac.createAnalyser();
       analyser.fftSize = 512;
+
       if (wantSys && screenStream.getAudioTracks().length) {
         const n = ac.createMediaStreamSource(new MediaStream(screenStream.getAudioTracks()));
         const g = ac.createGain();
@@ -285,9 +297,15 @@ async function startRecording() {
         state.micGain = g;
         n.connect(g); g.connect(dest); g.connect(analyser);
       }
-      state.audioCtx = ac; state.analyser = analyser;
+
+      state.audioCtx = ac;
+      state.analyser = analyser;
       audioTracks.push(...dest.stream.getAudioTracks());
       runMeter();
+    }
+
+    if (wantSys && !screenStream.getAudioTracks().length) {
+      setStatusBar('Computer sound was not available for this source.', 'err');
     }
 
     const recorder = new MediaRecorder(new MediaStream([videoTrack, ...audioTracks]), {
@@ -301,8 +319,7 @@ async function startRecording() {
 
     // Chunks must land in the order MediaRecorder emits them. This handler is
     // deliberately synchronous: it appends to a promise chain rather than
-    // awaiting, so two chunks are never in flight at once. An async handler
-    // here shuffles clusters on disk and truncates playback.
+    // awaiting, so two chunks are never in flight at once.
     state.writeQueue = Promise.resolve();
     state.writeFailed = null;
 
@@ -320,20 +337,22 @@ async function startRecording() {
     recorder.onerror = (ev) =>
       setStatusBar(`Recorder error: ${(ev.error && ev.error.name) || 'unknown'}`, 'err');
 
-    screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+    // Stopping the share from Windows own bar should end things cleanly.
+    screenTrack.addEventListener('ended', () => {
       if (state.status !== 'idle') stopRecording();
     });
 
     state.recorder = recorder;
+    state.frames = 0;
     recorder.start(2000);
 
     if (el.showBorder.checked && source && mode !== 'window') {
       window.api.showBorder({ displayId: source.displayId,
-                              region: cropAsRegion(mode, source, frameW, frameH) });
+                              region: cropsAnything ? cropAsRegion(mode, source, frameW, frameH) : null });
       state.borderShown = true;
     }
 
-    console.log(`Capturing ${crop.w}x${crop.h} from ${frameW}x${frameH}, mode=${mode}`);
+    console.log(`source ${frameW}x${frameH}, crop ${crop.w}x${crop.h} at ${crop.x},${crop.y}, mode=${mode}, canvas=${useCanvas}`);
 
     state.startedAt = Date.now();
     state.pausedMs = 0;
@@ -427,7 +446,10 @@ async function stopRecording() {
   el.busyText.textContent = format === 'mp4' ? 'Converting to MP4' : 'Finishing';
   el.busySub.textContent = format === 'mp4' ? 'This takes about as long as the recording' : 'Just a moment';
 
-  const result = await window.api.endFile({ format, fps: Number(el.fps.value) });
+  const result = await window.api.endFile({
+    format, fps: Number(el.fps.value),
+    crop: state.pendingCrop, bitrate: Number(el.quality.value)
+  });
   state.outPath = result.path;
 
   state.status = 'idle';

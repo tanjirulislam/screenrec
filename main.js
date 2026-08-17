@@ -1,12 +1,19 @@
 'use strict';
 
 const {
-  app, BrowserWindow, ipcMain, desktopCapturer, screen,
+  app, BrowserWindow, ipcMain, desktopCapturer, screen, session,
   globalShortcut, Tray, Menu, nativeImage, shell, dialog
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+
+// Set before the app is ready. Without these Chromium can suspend timers and
+// frame delivery in a window it considers idle, which stalls a recording.
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 let controlWindow = null;
 let overlayWindow = null;
@@ -22,7 +29,8 @@ const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const DEFAULT_DIR = path.join(app.getPath('videos'), 'ScreenRec');
 
 const PANEL_SIZE = { width: 780, height: 580 };
-const COMPACT_SIZE = { width: 320, height: 150 };
+const COMPACT_SIZE = { width: 330, height: 158 };
+const COUNT_SIZE   = { width: 330, height: 300 };
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
@@ -286,6 +294,34 @@ ipcMain.handle('sources:list', async () => {
     });
 });
 
+// getDisplayMedia asks the main process which source to hand back. The
+// renderer arms this immediately before calling it.
+let armedCapture = null;
+ipcMain.handle('capture:arm', async (_e, opts) => { armedCapture = opts; return true; });
+
+function installDisplayHandler() {
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 0, height: 0 }
+      });
+      const want = armedCapture && armedCapture.sourceId;
+      const chosen = sources.find((s) => s.id === want) || sources[0];
+      if (!chosen) return callback({});
+
+      // 'loopback' is how Windows system sound is captured on this path.
+      callback({
+        video: chosen,
+        audio: armedCapture && armedCapture.withSystemAudio ? 'loopback' : undefined
+      });
+    } catch (err) {
+      console.error('Display media request failed:', err);
+      callback({});
+    }
+  }, { useSystemPicker: false });
+}
+
 ipcMain.handle('region:select', async (_e, displayId) => openRegionOverlay(displayId));
 ipcMain.handle('border:show', async (_e, { displayId, region }) => showBorder(displayId, region));
 ipcMain.handle('border:hide', async () => hideBorder());
@@ -335,33 +371,28 @@ ipcMain.handle('file:chunk', async (_e, arrayBuffer) => {
   return { ok: true, bytes: bytesWritten };
 });
 
-ipcMain.handle('file:end', async (_e, { format, fps }) => {
+ipcMain.handle('file:end', async (_e, { format, fps, crop, bitrate }) => {
   if (!writeStream) return { path: null };
   await new Promise((res) => writeStream.end(res));
   writeStream = null;
 
   const raw = currentPath;
   currentPath = null;
-  if (!raw || !fs.existsSync(raw) || fs.statSync(raw).size === 0) {
-    return { path: null };
-  }
+  if (!raw || !fs.existsSync(raw) || fs.statSync(raw).size === 0) return { path: null };
 
   const wantMp4 = format === 'mp4';
   const final = raw.replace(/\.part$/, wantMp4 ? '.mp4' : '.webm');
 
   try {
-    if (wantMp4) await transcodeMp4(raw, final, fps || 30);
-    else await remuxWebm(raw, final);
+    await finalise(raw, final, { wantMp4, fps: fps || 30, crop, bitrate });
     fs.unlinkSync(raw);
     return { path: final };
   } catch (err) {
     console.error('Post-processing failed:', err);
-    // Never strand the recording: keep the raw bytes under a playable name.
-    try { fs.renameSync(raw, final.replace(/\.mp4$/, '.webm')); } catch {}
-    return {
-      path: final.replace(/\.mp4$/, '.webm'),
-      warning: 'Saved without re-encoding. Some players may show the wrong length.'
-    };
+    // Never strand a recording. Keep the bytes under a playable name.
+    const fallback = final.replace(/\.mp4$/, '.webm');
+    try { fs.renameSync(raw, fallback); } catch {}
+    return { path: fallback, warning: 'Saved without re-encoding, so the area was not cropped.' };
   }
 });
 
@@ -394,8 +425,14 @@ ipcMain.handle('state:set', async (_e, state) => {
 
 ipcMain.handle('window:compact', async (_e, compact) => {
   if (!controlWindow || controlWindow.isDestroyed()) return;
-  const size = compact ? COMPACT_SIZE : PANEL_SIZE;
+  const size = compact === 'count' ? COUNT_SIZE
+             : compact ? COMPACT_SIZE : PANEL_SIZE;
+
+  // The window is fixed size, and Windows ignores a resize on a window with
+  // no resize style, leaving the previous surface behind as a black area.
+  controlWindow.setResizable(true);
   controlWindow.setContentSize(size.width, size.height, false);
+  controlWindow.setResizable(false);
   controlWindow.setAlwaysOnTop(Boolean(compact));
   if (compact) {
     const { workArea } = screen.getPrimaryDisplay();
@@ -442,26 +479,53 @@ function runFfmpeg(args, label) {
   });
 }
 
-// Rewrites the container only. Takes a second or two even for long
-// recordings, and gives the file the duration MediaRecorder leaves out.
-function remuxWebm(input, output) {
-  return runFfmpeg(
-    ['-y', '-fflags', '+genpts', '-i', input, '-c', 'copy', '-f', 'webm', output],
-    'Finishing'
-  );
-}
+/**
+ * Cropping happens here rather than on a canvas in the renderer, so the
+ * stream stays untouched while it is being captured. Every capture mode
+ * now relies on this.
+ */
+function finalise(input, output, { wantMp4, fps, crop, bitrate }) {
+  const filters = [];
+  if (crop && crop.w && crop.h) {
+    filters.push(`crop=${crop.w}:${crop.h}:${crop.x}:${crop.y}`);
+  }
 
-function transcodeMp4(input, output, fps) {
+  if (wantMp4) {
+    filters.push(`fps=${fps}`);
+    return runFfmpeg([
+      '-y', '-fflags', '+genpts', '-i', input,
+      '-vf', filters.join(','), '-vsync', 'cfr',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      output
+    ], 'Converting');
+  }
+
+  if (!filters.length) {
+    // Container rewrite only. This is what supplies the duration and seek
+    // data MediaRecorder omits, and it takes a second or two at any length.
+    return runFfmpeg([
+      '-y', '-fflags', '+genpts', '-i', input,
+      '-c', 'copy', '-f', 'webm', output
+    ], 'Finishing');
+  }
+
+  // A cropped WebM must be re-encoded. VP8 in realtime mode is far quicker
+  // than VP9 and still compact.
   return runFfmpeg([
     '-y', '-fflags', '+genpts', '-i', input,
-    '-vf', `fps=${fps}`, '-vsync', 'cfr',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '128k',
-    '-movflags', '+faststart',
-    output
-  ], 'Converting');
+    '-vf', filters.join(','),
+    '-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8',
+    '-b:v', String(bitrate || 5000000),
+    '-c:a', 'libopus', '-b:a', '128k',
+    '-f', 'webm', output
+  ], 'Cropping');
 }
+
+
+
 
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
@@ -473,6 +537,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showPanel);
 
   app.whenReady().then(() => {
+    installDisplayHandler();
     createControlWindow();
     tray = new Tray(trayIcon());
     tray.on('click', showPanel);

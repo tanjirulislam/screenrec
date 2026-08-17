@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   listSources: () => ipcRenderer.invoke('sources:list'),
   selectRegion: (displayId) => ipcRenderer.invoke('region:select', displayId),
+  armCapture: (opts) => ipcRenderer.invoke('capture:arm', opts),
 
   showBorder: (opts) => ipcRenderer.invoke('border:show', opts),
   hideBorder: () => ipcRenderer.invoke('border:hide'),
