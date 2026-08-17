@@ -152,9 +152,19 @@
         <div class="head"><h1>Audio</h1><p>Sound sources and webcam overlay.</p></div>
         <div class="panel">
           <label class="check"><input type="checkbox" id="sys-audio" checked><span><b>Computer sound</b><i>Anything playing through your speakers</i></span></label>
+          <div class="vol sub">
+            <input type="range" id="sys-vol" min="0" max="200" step="5" value="100" />
+            <output id="sys-vol-out">100%</output>
+          </div>
+
           <label class="check"><input type="checkbox" id="mic-audio"><span><b>Microphone</b><i>Your voice</i></span></label>
           <select class="sub" id="mic-device" disabled></select>
+          <div class="vol sub">
+            <input type="range" id="mic-vol" min="0" max="300" step="5" value="180" disabled />
+            <output id="mic-vol-out">180%</output>
+          </div>
           <div class="meter" id="meter"></div>
+          <p class="note">Set computer sound to 0% to record only your voice, or the microphone to 0% to record only what is playing. The meter shows the mix that will be saved.</p>
         </div>
         <div class="panel">
           <label class="check"><input type="checkbox" id="cam-on"><span><b>Webcam overlay</b><i>A round camera view in one corner of the video</i></span></label>
@@ -235,8 +245,14 @@
 <div class="compact" id="view-countdown" hidden>
   <div class="titlebar"><span class="brand"><span class="brand-mark"></span>ScreenRec</span></div>
   <div class="count-wrap">
-    <div class="count" id="count-number">3</div>
-    <p class="count-sub">Recording starts in a moment</p>
+    <div class="ring">
+      <svg viewBox="0 0 120 120">
+        <circle class="ring-track" cx="60" cy="60" r="52" />
+        <circle class="ring-sweep" id="ring-sweep" cx="60" cy="60" r="52" />
+      </svg>
+      <span class="ring-num" id="count-number">3</span>
+    </div>
+    <p class="count-sub">Get ready, recording is about to start</p>
     <button class="btn sm" id="btn-cancel-count">Cancel</button>
   </div>
 </div>
@@ -251,9 +267,11 @@
   </div>
 </div>
 
-<canvas id="stage" hidden></canvas>
-<video id="screen-video" hidden muted playsinline></video>
-<video id="cam-video" hidden muted playsinline></video>
+<div class="offscreen" aria-hidden="true">
+  <canvas id="stage"></canvas>
+  <video id="screen-video" muted playsinline></video>
+  <video id="cam-video" muted playsinline></video>
+</div>
 
 <script src="app.js"></script>
 </body>

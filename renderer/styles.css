@@ -354,3 +354,77 @@ select:disabled, .btn:disabled { cursor: default; }
   .tally, .spin, .page.on { animation: none; }
   * { transition-duration: 1ms !important; }
 }
+
+/* ---- Offscreen capture elements ----
+   Not display:none. A video element that is not rendered can have its frame
+   delivery suspended by Chromium, which makes the canvas draw black. */
+.offscreen {
+  position: fixed;
+  left: 0; top: 0;
+  width: 3px; height: 3px;
+  overflow: hidden;
+  opacity: .004;
+  pointer-events: none;
+  z-index: -1;
+}
+.offscreen video, .offscreen canvas { width: 3px; height: 3px; }
+
+/* ---- Countdown ring ---- */
+.count-wrap { padding: 26px 18px 22px; text-align: center; }
+
+.ring { position: relative; width: 118px; height: 118px; margin: 0 auto; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 6; stroke-linecap: round; }
+.ring-track { stroke: var(--line); }
+.ring-sweep {
+  stroke: var(--rec);
+  stroke-dasharray: 327;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset .95s linear;
+}
+
+.ring-num {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-family: var(--mono);
+  font-size: 46px; font-weight: 400;
+  color: var(--rec);
+  font-variant-numeric: tabular-nums;
+}
+
+.count-sub { margin: 16px 0 16px; font-size: 12.5px; color: var(--ink-dim); }
+
+/* ---- Volume sliders ---- */
+.vol { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+
+.vol input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.vol input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--brand);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,51,128,.35);
+  cursor: pointer;
+}
+
+.vol input[type="range"]:disabled { cursor: default; opacity: .5; }
+.vol input[type="range"]:disabled::-webkit-slider-thumb { background: var(--ink-faint); cursor: default; }
+
+.vol output {
+  flex: none;
+  width: 44px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-dim);
+}

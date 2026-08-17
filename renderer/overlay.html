@@ -9,7 +9,7 @@
     :root { --brand: #00B1FF; --ink: #003380; }
     * { box-sizing: border-box; }
     html, body {
-      margin: 0; height: 100%;
+      margin: 0; height: 100%; pointer-events: auto;
       overflow: hidden; cursor: crosshair; user-select: none;
       background: rgba(0, 20, 45, 0.30);
       font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -81,7 +81,7 @@
       dims.style.top = (below + 26 < H ? below : Math.max(0, y - 30)) + 'px';
     }
 
-    document.getElementById('cancel').addEventListener('mousedown', (e) => {
+    document.getElementById('cancel').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       window.api.cancelRegion();
     });
@@ -92,24 +92,25 @@
       window.api.cancelRegion();
     });
 
-    window.addEventListener('mousedown', (e) => {
+    window.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
+      try { e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch {}
       dragging = true;
       startX = e.clientX; startY = e.clientY;
       box.style.display = 'block'; dims.style.display = 'block';
       prompt.style.display = 'none';
       document.getElementById('cancel').style.display = 'none';
-      document.body.style.background = 'transparent';
+      document.body.style.background = 'rgba(0,0,0,0.01)';
       layout(startX, startY, 0, 0);
     });
 
-    window.addEventListener('mousemove', (e) => {
+    window.addEventListener('pointermove', (e) => {
       if (!dragging) return;
       layout(Math.min(startX, e.clientX), Math.min(startY, e.clientY),
              Math.abs(e.clientX - startX), Math.abs(e.clientY - startY));
     });
 
-    window.addEventListener('mouseup', (e) => {
+    window.addEventListener('pointerup', (e) => {
       if (!dragging) return;
       dragging = false;
       const x = Math.min(startX, e.clientX), y = Math.min(startY, e.clientY);

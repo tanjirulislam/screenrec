@@ -17,6 +17,8 @@ const el = {
   countdownOn: $('countdown'), showBorder: $('show-border'),
   sysAudio: $('sys-audio'), micAudio: $('mic-audio'), micDevice: $('mic-device'),
   camOn: $('cam-on'), camDevice: $('cam-device'), camCorner: $('cam-corner'), meter: $('meter'),
+  sysVol: $('sys-vol'), sysVolOut: $('sys-vol-out'),
+  micVol: $('mic-vol'), micVolOut: $('mic-vol-out'), ringSweep: $('ring-sweep'),
   savePath: $('save-path'), chooseFolder: $('btn-choose-folder'), openFolder: $('btn-open-folder'),
   folderBtn: $('btn-folder'), aboutVersion: $('about-version'),
   recordBtn: $('btn-record'), pauseBtn: $('btn-pause'), stopBtn: $('btn-stop'),
@@ -48,7 +50,7 @@ const state = {
   recorder: null, streams: [], audioCtx: null, analyser: null,
   drawTimer: 0, rafMeter: 0, countTimer: 0, countCancelled: false,
   startedAt: 0, pausedMs: 0, pauseStartedAt: 0, tick: 0,
-  outPath: null, borderShown: false,
+  outPath: null, borderShown: false, sysGain: null, micGain: null,
   writeQueue: Promise.resolve(), writeFailed: null
 };
 
@@ -153,14 +155,27 @@ function runCountdown(seconds) {
   return new Promise((resolve) => {
     state.countCancelled = false;
     let n = seconds;
-    el.countNumber.textContent = String(n);
+
+    const paint = () => {
+      el.countNumber.textContent = String(n);
+      // 327 is the circumference of the r=52 ring.
+      el.ringSweep.style.transition = 'none';
+      el.ringSweep.style.strokeDashoffset = '0';
+      requestAnimationFrame(() => {
+        el.ringSweep.style.transition = 'stroke-dashoffset .95s linear';
+        el.ringSweep.style.strokeDashoffset = '327';
+      });
+    };
+
+    paint();
     showView('countdown');
     window.api.setCompact(true);
+
     state.countTimer = setInterval(() => {
       if (state.countCancelled) { clearInterval(state.countTimer); return resolve(false); }
       n -= 1;
       if (n <= 0) { clearInterval(state.countTimer); return resolve(true); }
-      el.countNumber.textContent = String(n);
+      paint();
     }, 1000);
   });
 }
@@ -196,9 +211,7 @@ async function startRecording() {
     });
     state.streams.push(screenStream);
 
-    el.screenVideo.srcObject = screenStream;
-    await el.screenVideo.play();
-    await waitForFrame(el.screenVideo);
+    await attachVideo(el.screenVideo, screenStream);
 
     let camStream = null;
     if (el.camOn.checked) {
@@ -207,15 +220,18 @@ async function startRecording() {
                  width: { ideal: 640 }, height: { ideal: 480 } }
       });
       state.streams.push(camStream);
-      el.camVideo.srcObject = camStream;
-      await el.camVideo.play();
+      await attachVideo(el.camVideo, camStream);
     }
 
     let micStream = null;
     if (el.micAudio.checked) {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: el.micDevice.value ? { exact: el.micDevice.value } : undefined,
-                 echoCancellation: false, noiseSuppression: true }
+        audio: {
+          deviceId: el.micDevice.value ? { exact: el.micDevice.value } : undefined,
+          echoCancellation: false,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       state.streams.push(micStream);
     }
@@ -257,11 +273,16 @@ async function startRecording() {
       analyser.fftSize = 512;
       if (wantSys && screenStream.getAudioTracks().length) {
         const n = ac.createMediaStreamSource(new MediaStream(screenStream.getAudioTracks()));
-        n.connect(dest); n.connect(analyser);
+        const g = ac.createGain();
+        g.gain.value = Number(el.sysVol.value) / 100;
+        state.sysGain = g;
+        n.connect(g); g.connect(dest); g.connect(analyser);
       }
       if (micStream) {
         const n = ac.createMediaStreamSource(micStream);
-        const g = ac.createGain(); g.gain.value = 1.0;
+        const g = ac.createGain();
+        g.gain.value = Number(el.micVol.value) / 100;
+        state.micGain = g;
         n.connect(g); g.connect(dest); g.connect(analyser);
       }
       state.audioCtx = ac; state.analyser = analyser;
@@ -361,6 +382,7 @@ const pickMimeType = () =>
     .find((t) => MediaRecorder.isTypeSupported(t)) || 'video/webm';
 
 function togglePause() {
+  if (state.status === 'stopping' || !state.recorder) return;
   if (state.status === 'recording') {
     state.recorder.pause();
     clearInterval(state.drawTimer);
@@ -374,12 +396,24 @@ function togglePause() {
 }
 
 async function stopRecording() {
-  if (state.status === 'idle' || !state.recorder) return;
+  if (state.status === 'idle' || state.status === 'stopping' || !state.recorder) return;
 
   const recorder = state.recorder;
-  const done = new Promise((res) => recorder.addEventListener('stop', res, { once: true }));
-  if (recorder.state === 'paused') recorder.resume();
-  recorder.stop();
+  state.status = 'stopping';
+
+  const done = new Promise((res) => {
+    recorder.addEventListener('stop', res, { once: true });
+    // A stalled source can leave the stop event unfired, which used to freeze
+    // the window until something else nudged the recorder.
+    setTimeout(res, 6000);
+  });
+
+  try {
+    if (recorder.state === 'paused') recorder.resume();
+    if (recorder.state !== 'inactive') recorder.stop();
+  } catch (err) {
+    console.error('Stop failed:', err);
+  }
   await done;
 
   showView('busy');
@@ -416,6 +450,7 @@ async function cleanup() {
   state.streams = [];
   if (state.audioCtx) { try { await state.audioCtx.close(); } catch {} }
   state.audioCtx = null; state.analyser = null; state.recorder = null;
+  state.sysGain = null; state.micGain = null;
   el.screenVideo.srcObject = null;
   el.camVideo.srcObject = null;
   resetMeter();
@@ -494,10 +529,32 @@ function friendlyError(err) {
   return (err && err.message) || 'Could not start the recording.';
 }
 
-const waitForFrame = (v) => new Promise((res) => {
-  if (v.videoWidth) return res();
-  v.addEventListener('loadedmetadata', res, { once: true });
-});
+/**
+ * Attaches a stream and waits for a genuinely new frame.
+ * The element is reset first because videoWidth keeps its previous value,
+ * so a naive check passes instantly on the second recording and the canvas
+ * ends up drawing an empty element.
+ */
+async function attachVideo(videoEl, stream) {
+  try { videoEl.pause(); } catch {}
+  videoEl.srcObject = null;
+  videoEl.load();
+
+  videoEl.srcObject = stream;
+  await videoEl.play();
+
+  await new Promise((resolve) => {
+    let settled = false;
+    const done = () => { if (!settled) { settled = true; resolve(); } };
+    if (videoEl.requestVideoFrameCallback) videoEl.requestVideoFrameCallback(done);
+    else videoEl.addEventListener('loadeddata', done, { once: true });
+    setTimeout(done, 4000);
+  });
+
+  if (!videoEl.videoWidth || !videoEl.videoHeight) {
+    throw new Error('The screen source produced no picture. Try again.');
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Mode, pages, preview                                                */
@@ -590,7 +647,16 @@ async function pickArea() {
 /* Wiring                                                              */
 /* ------------------------------------------------------------------ */
 
+function applyVolumes() {
+  el.sysVolOut.textContent = `${el.sysVol.value}%`;
+  el.micVolOut.textContent = `${el.micVol.value}%`;
+  if (state.sysGain) state.sysGain.gain.value = Number(el.sysVol.value) / 100;
+  if (state.micGain) state.micGain.gain.value = Number(el.micVol.value) / 100;
+}
+
 function syncEnabled() {
+  el.sysVol.disabled = !el.sysAudio.checked;
+  el.micVol.disabled = !el.micAudio.checked;
   el.micDevice.disabled = !el.micAudio.checked;
   el.camDevice.disabled = !el.camOn.checked;
   el.camCorner.disabled = !el.camOn.checked;
@@ -601,7 +667,8 @@ const savePrefs = () => window.api.setSettings({
   sysAudio: el.sysAudio.checked, micAudio: el.micAudio.checked,
   camOn: el.camOn.checked, camCorner: el.camCorner.value,
   format: el.format.value, fps: el.fps.value, quality: el.quality.value,
-  countdown: el.countdownOn.checked, showBorder: el.showBorder.checked
+  countdown: el.countdownOn.checked, showBorder: el.showBorder.checked,
+  sysVol: el.sysVol.value, micVol: el.micVol.value
 });
 
 el.modes.addEventListener('click', (e) => {
@@ -622,6 +689,9 @@ el.nav.addEventListener('click', (e) => {
 }));
 
 el.format.addEventListener('change', () => { updateFormatNote(); savePrefs(); updateSummary(); });
+
+[el.sysVol, el.micVol].forEach((r) =>
+  r.addEventListener('input', () => { applyVolumes(); savePrefs(); }));
 el.screenSource.addEventListener('change', updatePreviewSize);
 el.refresh.addEventListener('click', loadSources);
 el.pickArea.addEventListener('click', pickArea);
@@ -679,6 +749,8 @@ navigator.mediaDevices.addEventListener('devicechange', loadDevices);
   if (typeof saved.camOn === 'boolean') el.camOn.checked = saved.camOn;
   if (typeof saved.countdown === 'boolean') el.countdownOn.checked = saved.countdown;
   if (typeof saved.showBorder === 'boolean') el.showBorder.checked = saved.showBorder;
+  if (saved.sysVol) el.sysVol.value = saved.sysVol;
+  if (saved.micVol) el.micVol.value = saved.micVol;
 
   el.savePath.textContent = saved.savePath || '';
   el.savePath.title = saved.savePath || '';
@@ -687,6 +759,7 @@ navigator.mediaDevices.addEventListener('devicechange', loadDevices);
   updateRegionLabel();
   updateFormatNote();
   syncEnabled();
+  applyVolumes();
   await setMode(saved.mode && MODES[saved.mode] && !(saved.mode === 'repeat' && !state.lastRegion)
     ? saved.mode : 'full');
 
