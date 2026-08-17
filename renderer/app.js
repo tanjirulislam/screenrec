@@ -1,67 +1,58 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
+const $$ = (s) => [...document.querySelectorAll(s)];
 
 const el = {
-  views: {
-    setup: $('view-setup'), countdown: $('view-countdown'),
-    recording: $('view-recording'), busy: $('view-busy')
-  },
+  views: { setup: $('view-setup'), countdown: $('view-countdown'),
+           recording: $('view-recording'), busy: $('view-busy') },
   modes: $('modes'), nav: $('nav'),
-  modeTitle: $('mode-title'), modeDesc: $('mode-desc'), summary: $('summary'),
-  panelScreen: $('panel-screen'), panelWindow: $('panel-window'),
-  panelFixed: $('panel-fixed'), panelRegion: $('panel-region'),
-  screenSource: $('screen-source'), windowSource: $('window-source'),
-  refreshWindows: $('btn-refresh-windows'),
+  mTitle: $('m-title'), mDesc: $('m-desc'),
+  pvShot: $('pv-shot'), pvSize: $('pv-size'), pvDesc: $('pv-desc'),
+  pScreen: $('p-screen'), pWindow: $('p-window'), pFixed: $('p-fixed'), pRegion: $('p-region'),
+  screenSource: $('screen-source'), windowSource: $('window-source'), refresh: $('btn-refresh'),
   fixedSize: $('fixed-size'), regionInfo: $('region-info'), pickArea: $('btn-pick-area'),
-  sysAudio: $('sys-audio'), micAudio: $('mic-audio'), micDevice: $('mic-device'),
-  camOn: $('cam-on'), camDevice: $('cam-device'), camCorner: $('cam-corner'),
-  format: $('format'), formatNote: $('format-note'), fps: $('fps'), quality: $('quality'),
+  summary: $('summary'),
+  format: $('format'), formatNote: $('format-note'), quality: $('quality'), fps: $('fps'),
   countdownOn: $('countdown'), showBorder: $('show-border'),
-  savePath: $('save-path'), chooseFolder: $('btn-choose-folder'),
-  openFolder: $('btn-open-folder'), folderBtn: $('btn-folder'),
+  sysAudio: $('sys-audio'), micAudio: $('mic-audio'), micDevice: $('mic-device'),
+  camOn: $('cam-on'), camDevice: $('cam-device'), camCorner: $('cam-corner'), meter: $('meter'),
+  savePath: $('save-path'), chooseFolder: $('btn-choose-folder'), openFolder: $('btn-open-folder'),
+  folderBtn: $('btn-folder'), aboutVersion: $('about-version'),
   recordBtn: $('btn-record'), pauseBtn: $('btn-pause'), stopBtn: $('btn-stop'),
   countNumber: $('count-number'), cancelCount: $('btn-cancel-count'),
   tally: $('tally'), timecode: $('timecode'), filesize: $('filesize'),
   busyText: $('busy-text'), busySub: $('busy-sub'),
-  statusDot: $('status-dot'), statusAction: $('btn-status-action'),
-  hint: $('hint'), meter: $('meter'),
+  statusbar: $('statusbar'), statusDot: $('status-dot'), hint: $('hint'),
+  statusAction: $('btn-status-action'),
   stage: $('stage'), screenVideo: $('screen-video'), camVideo: $('cam-video')
 };
 
 const MODES = {
-  full:      { title: 'Full screen',            desc: 'Records everything on the screen you choose.' },
-  notaskbar: { title: 'Screen without taskbar', desc: 'Everything except the bar along the edge of the screen.' },
-  region:    { title: 'Selected area',          desc: 'Drag a box around the part you want to record.' },
-  fixed:     { title: 'Fixed size',             desc: 'A preset box in the middle of the screen.' },
-  window:    { title: 'Single window',          desc: 'One application only. Other windows in front of it are not captured.' },
-  repeat:    { title: 'Last area',              desc: 'The same box you drew last time, remembered between sessions.' }
+  full:      { t: 'Full screen',            d: 'Records everything on the screen you choose.',
+               pd: 'The whole screen, taskbar included.',        box: { left:'0', top:'0', right:'0', bottom:'0' } },
+  notaskbar: { t: 'Screen without taskbar', d: 'Everything except the bar along the edge of the screen.',
+               pd: 'The taskbar is cropped out automatically.',  box: { left:'0', top:'0', right:'0', bottom:'9px' } },
+  region:    { t: 'Selected area',          d: 'Drag a box around the part you want to record.',
+               pd: 'Only the area you draw is captured.',        box: { left:'18%', top:'20%', right:'20%', bottom:'22%' } },
+  fixed:     { t: 'Fixed size',             d: 'A preset box in the middle of the screen.',
+               pd: 'Useful when every video must match exactly.', box: { left:'17%', top:'16%', right:'17%', bottom:'22%' } },
+  window:    { t: 'Single window',          d: 'One application only. Windows in front of it are not captured.',
+               pd: 'Other windows on top are not recorded.',     box: { left:'10%', top:'14%', right:'22%', bottom:'26%' } },
+  repeat:    { t: 'Last area',              d: 'The same box you drew last time, remembered between sessions.',
+               pd: 'Handy for a series of matching clips.',      box: { left:'18%', top:'20%', right:'20%', bottom:'22%' } }
 };
 
 const state = {
-  mode: 'full',
-  status: 'idle',
-  sources: [],
-  lastRegion: null,
-  recorder: null,
-  streams: [],
-  audioCtx: null,
-  analyser: null,
-  drawTimer: 0,
-  rafMeter: 0,
-  countTimer: 0,
-  countCancelled: false,
-  startedAt: 0,
-  pausedMs: 0,
-  pauseStartedAt: 0,
-  tick: 0,
-  outPath: null,
-  borderShown: false,
-  writeQueue: Promise.resolve(),
-  writeFailed: null
+  mode: 'full', status: 'idle', sources: [], lastRegion: null,
+  recorder: null, streams: [], audioCtx: null, analyser: null,
+  drawTimer: 0, rafMeter: 0, countTimer: 0, countCancelled: false,
+  startedAt: 0, pausedMs: 0, pauseStartedAt: 0, tick: 0,
+  outPath: null, borderShown: false,
+  writeQueue: Promise.resolve(), writeFailed: null
 };
 
-const DEFAULT_HINT = 'Press Ctrl+Shift+R anywhere to start or stop';
+const DEFAULT_HINT = 'Press Ctrl+Shift+R anywhere to start or save';
 
 /* ------------------------------------------------------------------ */
 /* Sources and devices                                                 */
@@ -69,24 +60,23 @@ const DEFAULT_HINT = 'Press Ctrl+Shift+R anywhere to start or stop';
 
 async function loadSources() {
   state.sources = await window.api.listSources();
-
   const screens = state.sources.filter((s) => s.kind === 'screen');
   const windows = state.sources.filter((s) => s.kind === 'window');
 
-  const keepScreen = el.screenSource.value;
-  const keepWindow = el.windowSource.value;
+  const keepS = el.screenSource.value, keepW = el.windowSource.value;
 
   el.screenSource.innerHTML = '';
-  screens.forEach((s, i) =>
-    el.screenSource.appendChild(new Option(
-      screens.length > 1 ? `Screen ${i + 1}, ${s.name}` : s.name, s.id)));
+  screens.forEach((s, i) => {
+    const size = s.metrics ? ` ${s.metrics.bounds.width} x ${s.metrics.bounds.height}` : '';
+    el.screenSource.appendChild(new Option(`Screen ${i + 1},${size}`, s.id));
+  });
 
   el.windowSource.innerHTML = '';
   if (!windows.length) el.windowSource.appendChild(new Option('No open windows found', ''));
   else windows.forEach((w) => el.windowSource.appendChild(new Option(w.name, w.id)));
 
-  if (keepScreen && screens.some((s) => s.id === keepScreen)) el.screenSource.value = keepScreen;
-  if (keepWindow && windows.some((w) => w.id === keepWindow)) el.windowSource.value = keepWindow;
+  if (keepS && screens.some((s) => s.id === keepS)) el.screenSource.value = keepS;
+  if (keepW && windows.some((w) => w.id === keepW)) el.windowSource.value = keepW;
 }
 
 async function loadDevices() {
@@ -96,7 +86,7 @@ async function loadDevices() {
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
       probe.getTracks().forEach((t) => t.stop());
       devices = await navigator.mediaDevices.enumerateDevices();
-    } catch { /* no mic, or permission declined */ }
+    } catch { /* no mic or permission declined */ }
   }
   fill(el.micDevice, devices.filter((d) => d.kind === 'audioinput'), 'Microphone');
   fill(el.camDevice, devices.filter((d) => d.kind === 'videoinput'), 'Camera');
@@ -105,69 +95,54 @@ async function loadDevices() {
 function fill(select, devices, fallback) {
   const keep = select.value;
   select.innerHTML = '';
-  if (!devices.length) {
-    select.appendChild(new Option(`No ${fallback.toLowerCase()} found`, ''));
-    return;
-  }
-  devices.forEach((d, i) =>
-    select.appendChild(new Option(d.label || `${fallback} ${i + 1}`, d.deviceId)));
+  if (!devices.length) { select.appendChild(new Option(`No ${fallback.toLowerCase()} found`, '')); return; }
+  devices.forEach((d, i) => select.appendChild(new Option(d.label || `${fallback} ${i + 1}`, d.deviceId)));
   if (keep && devices.some((d) => d.deviceId === keep)) select.value = keep;
 }
 
 const sourceFor = (id) => state.sources.find((s) => s.id === id) || null;
-const activeSourceId = () =>
-  state.mode === 'window' ? el.windowSource.value : el.screenSource.value;
+const activeSourceId = () => state.mode === 'window' ? el.windowSource.value : el.screenSource.value;
 
 /* ------------------------------------------------------------------ */
 /* Crop                                                                */
 /* ------------------------------------------------------------------ */
 
-function resolveCrop(mode, source, frameW, frameH) {
-  const whole = { x: 0, y: 0, w: frameW, h: frameH };
+function resolveCrop(mode, source, w, h) {
+  const whole = { x: 0, y: 0, w, h };
   if (mode === 'full' || mode === 'window') return whole;
 
   if (mode === 'notaskbar') {
     const m = source && source.metrics;
-    if (!m) {
-      setStatusBar('Could not read the taskbar size, recording the whole screen.', 'error');
-      return whole;
-    }
-    if (m.workArea.width >= m.bounds.width && m.workArea.height >= m.bounds.height) {
-      setStatusBar('No taskbar detected on this screen, recording it in full.', 'error');
-      return whole;
-    }
-    // workArea is the desktop minus the taskbar, wherever it sits.
+    if (!m) return whole;
+    if (m.workArea.width >= m.bounds.width && m.workArea.height >= m.bounds.height) return whole;
     return {
-      x: Math.round(((m.workArea.x - m.bounds.x) / m.bounds.width) * frameW),
-      y: Math.round(((m.workArea.y - m.bounds.y) / m.bounds.height) * frameH),
-      w: Math.round((m.workArea.width / m.bounds.width) * frameW),
-      h: Math.round((m.workArea.height / m.bounds.height) * frameH)
+      x: Math.round(((m.workArea.x - m.bounds.x) / m.bounds.width) * w),
+      y: Math.round(((m.workArea.y - m.bounds.y) / m.bounds.height) * h),
+      w: Math.round((m.workArea.width / m.bounds.width) * w),
+      h: Math.round((m.workArea.height / m.bounds.height) * h)
     };
   }
 
   if (mode === 'fixed') {
-    const [w, h] = el.fixedSize.value.split('x').map(Number);
-    const cw = Math.min(w, frameW);
-    const ch = Math.min(h, frameH);
-    return { x: Math.round((frameW - cw) / 2), y: Math.round((frameH - ch) / 2), w: cw, h: ch };
+    const [fw, fh] = el.fixedSize.value.split('x').map(Number);
+    const cw = Math.min(fw, w), ch = Math.min(fh, h);
+    return { x: Math.round((w - cw) / 2), y: Math.round((h - ch) / 2), w: cw, h: ch };
   }
 
   if (mode === 'region' || mode === 'repeat') {
     const r = state.lastRegion;
     if (!r) return whole;
-    return {
-      x: Math.round(r.x * frameW), y: Math.round(r.y * frameH),
-      w: Math.round(r.w * frameW), h: Math.round(r.h * frameH)
-    };
+    return { x: Math.round(r.x * w), y: Math.round(r.y * h),
+             w: Math.round(r.w * w), h: Math.round(r.h * h) };
   }
   return whole;
 }
 
-function cropAsRegion(mode, source, frameW, frameH) {
+function cropAsRegion(mode, source, w, h) {
   if (mode === 'window') return null;
-  const c = resolveCrop(mode, source, frameW, frameH);
-  if (c.x === 0 && c.y === 0 && c.w === frameW && c.h === frameH) return null;
-  return { x: c.x / frameW, y: c.y / frameH, w: c.w / frameW, h: c.h / frameH };
+  const c = resolveCrop(mode, source, w, h);
+  if (c.x === 0 && c.y === 0 && c.w === w && c.h === h) return null;
+  return { x: c.x / w, y: c.y / h, w: c.w / w, h: c.h / h };
 }
 
 /* ------------------------------------------------------------------ */
@@ -180,7 +155,7 @@ function runCountdown(seconds) {
     let n = seconds;
     el.countNumber.textContent = String(n);
     showView('countdown');
-
+    window.api.setCompact(true);
     state.countTimer = setInterval(() => {
       if (state.countCancelled) { clearInterval(state.countTimer); return resolve(false); }
       n -= 1;
@@ -192,44 +167,32 @@ function runCountdown(seconds) {
 
 async function startRecording() {
   if (state.status !== 'idle') return;
-  setHint('');
+  setStatusBar('');
 
   const mode = state.mode;
-  const sourceId = activeSourceId();
-
-  if (!sourceId) {
-    return setHint(mode === 'window' ? 'Choose a window to record.' : 'Choose a screen to record.', true);
-  }
-
-  if (mode === 'region') {
-    const ok = await pickArea();
-    if (!ok) return;
-  }
-
+  if (mode === 'region') { if (!await pickArea()) return; }
   if (mode === 'repeat' && !state.lastRegion) {
-    return setHint('No saved area yet, use Select area once first.', true);
+    return setStatusBar('No saved area yet. Use Select area once first.', 'err');
+  }
+
+  await loadSources();
+  const sourceId = activeSourceId();
+  if (!sourceId) {
+    return setStatusBar(mode === 'window' ? 'Choose a window to record.' : 'Choose a screen to record.', 'err');
   }
 
   if (el.countdownOn.checked) {
-    const proceed = await runCountdown(3);
-    if (!proceed) { showView('setup'); return setHint('Cancelled.'); }
+    if (!await runCountdown(3)) { showView('setup'); window.api.setCompact(false); return setStatusBar('Cancelled.'); }
   }
 
   const fps = Number(el.fps.value);
 
   try {
-    await loadSources();
-    const wantSystemAudio = el.sysAudio.checked;
+    const wantSys = el.sysAudio.checked;
 
     const screenStream = await navigator.mediaDevices.getUserMedia({
-      audio: wantSystemAudio ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: sourceId,
-          maxFrameRate: fps
-        }
-      }
+      audio: wantSys ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
+      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxFrameRate: fps } }
     });
     state.streams.push(screenStream);
 
@@ -240,10 +203,8 @@ async function startRecording() {
     let camStream = null;
     if (el.camOn.checked) {
       camStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: el.camDevice.value ? { exact: el.camDevice.value } : undefined,
-          width: { ideal: 640 }, height: { ideal: 480 }
-        }
+        video: { deviceId: el.camDevice.value ? { exact: el.camDevice.value } : undefined,
+                 width: { ideal: 640 }, height: { ideal: 480 } }
       });
       state.streams.push(camStream);
       el.camVideo.srcObject = camStream;
@@ -253,20 +214,16 @@ async function startRecording() {
     let micStream = null;
     if (el.micAudio.checked) {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: el.micDevice.value ? { exact: el.micDevice.value } : undefined,
-          echoCancellation: false, noiseSuppression: true
-        }
+        audio: { deviceId: el.micDevice.value ? { exact: el.micDevice.value } : undefined,
+                 echoCancellation: false, noiseSuppression: true }
       });
       state.streams.push(micStream);
     }
 
-    const frameW = el.screenVideo.videoWidth;
-    const frameH = el.screenVideo.videoHeight;
+    const frameW = el.screenVideo.videoWidth, frameH = el.screenVideo.videoHeight;
     const source = sourceFor(sourceId);
     const crop = resolveCrop(mode, source, frameW, frameH);
-
-    crop.w -= crop.w % 2;   // H.264 rejects odd dimensions
+    crop.w -= crop.w % 2;
     crop.h -= crop.h % 2;
     if (crop.w < 2 || crop.h < 2) throw new Error('The selected area is too small.');
 
@@ -279,47 +236,37 @@ async function startRecording() {
       if (camStream) drawCamera(ctx, crop);
     };
 
-    // Paint once before capturing. A canvas that has never been drawn to can
-    // hand back a track that produces no frames at all, which is how a
-    // recording ends up with audio and no video.
+    // Paint before capturing. A canvas that has never been drawn to can hand
+    // back a track producing no frames, which is how a recording ends up with
+    // audio and no video.
     drawFrame();
 
-    // captureStream(fps) samples the canvas at a fixed rate on its own, which
-    // yields constant frame rate video. The interval below keeps the canvas
-    // contents fresh; it replaced requestAnimationFrame, which Chromium stalls
-    // whenever the window is covered.
+    // captureStream(fps) samples at a fixed rate on its own, giving constant
+    // frame rate video. The interval keeps the canvas fresh; it replaced
+    // requestAnimationFrame, which Chromium stalls when the window is covered.
     const canvasStream = el.stage.captureStream(fps);
     const videoTrack = canvasStream.getVideoTracks()[0];
     if (!videoTrack) throw new Error('Could not start capturing the screen. Try again.');
-
     state.drawTimer = setInterval(drawFrame, Math.round(1000 / fps));
 
     const audioTracks = [];
-    if (wantSystemAudio || micStream) {
+    if (wantSys || micStream) {
       const ac = new AudioContext();
       const dest = ac.createMediaStreamDestination();
       const analyser = ac.createAnalyser();
       analyser.fftSize = 512;
-
-      if (wantSystemAudio && screenStream.getAudioTracks().length) {
+      if (wantSys && screenStream.getAudioTracks().length) {
         const n = ac.createMediaStreamSource(new MediaStream(screenStream.getAudioTracks()));
         n.connect(dest); n.connect(analyser);
       }
       if (micStream) {
         const n = ac.createMediaStreamSource(micStream);
-        const gain = ac.createGain();
-        gain.gain.value = 1.0;
-        n.connect(gain); gain.connect(dest); gain.connect(analyser);
+        const g = ac.createGain(); g.gain.value = 1.0;
+        n.connect(g); g.connect(dest); g.connect(analyser);
       }
-
-      state.audioCtx = ac;
-      state.analyser = analyser;
+      state.audioCtx = ac; state.analyser = analyser;
       audioTracks.push(...dest.stream.getAudioTracks());
       runMeter();
-    }
-
-    if (wantSystemAudio && !screenStream.getAudioTracks().length) {
-      setHint('Computer sound is unavailable for this source, recording video only.', true);
     }
 
     const recorder = new MediaRecorder(new MediaStream([videoTrack, ...audioTracks]), {
@@ -331,9 +278,10 @@ async function startRecording() {
     const { path } = await window.api.beginFile();
     state.outPath = path;
 
-    // Chunks must reach disk in the order MediaRecorder emits them. The
-    // handler is deliberately synchronous: it appends to a promise chain
-    // rather than awaiting, so two chunks can never be in flight at once.
+    // Chunks must land in the order MediaRecorder emits them. This handler is
+    // deliberately synchronous: it appends to a promise chain rather than
+    // awaiting, so two chunks are never in flight at once. An async handler
+    // here shuffles clusters on disk and truncates playback.
     state.writeQueue = Promise.resolve();
     state.writeFailed = null;
 
@@ -345,14 +293,11 @@ async function startRecording() {
         const buf = await blob.arrayBuffer();
         const res = await window.api.writeChunk(buf);
         if (res && res.bytes) el.filesize.textContent = formatBytes(res.bytes);
-      }).catch((err) => {
-        state.writeFailed = err;
-        console.error('Chunk write failed:', err);
-      });
+      }).catch((err) => { state.writeFailed = err; console.error('Chunk write failed:', err); });
     };
 
     recorder.onerror = (ev) =>
-      setHint(`Recorder error: ${(ev.error && ev.error.name) || 'unknown'}`, true);
+      setStatusBar(`Recorder error: ${(ev.error && ev.error.name) || 'unknown'}`, 'err');
 
     screenStream.getVideoTracks()[0].addEventListener('ended', () => {
       if (state.status !== 'idle') stopRecording();
@@ -361,23 +306,13 @@ async function startRecording() {
     state.recorder = recorder;
     recorder.start(2000);
 
-    // If no video data appears in the first few seconds something is wrong
-    // with the source; say so rather than producing an unplayable file.
-    setTimeout(() => {
-      if (state.status !== 'idle' && videoTrack.readyState !== 'live') {
-        setStatusBar('The screen source stopped responding.', 'error');
-      }
-    }, 3000);
-
     if (el.showBorder.checked && source && mode !== 'window') {
-      window.api.showBorder({
-        displayId: source.displayId,
-        region: cropAsRegion(mode, source, frameW, frameH)
-      });
+      window.api.showBorder({ displayId: source.displayId,
+                              region: cropAsRegion(mode, source, frameW, frameH) });
       state.borderShown = true;
     }
 
-    console.log(`Capturing ${crop.w}x${crop.h} from a ${frameW}x${frameH} source, mode=${mode}`);
+    console.log(`Capturing ${crop.w}x${crop.h} from ${frameW}x${frameH}, mode=${mode}`);
 
     state.startedAt = Date.now();
     state.pausedMs = 0;
@@ -387,25 +322,23 @@ async function startRecording() {
     startClock();
   } catch (err) {
     console.error(err);
-    setHint(friendlyError(err), true);
     await cleanup();
     setStatus('idle');
     showView('setup');
+    window.api.setCompact(false);
+    setStatusBar(friendlyError(err), 'err');
   }
 }
 
 function drawCamera(ctx, crop) {
   const size = Math.round(Math.min(crop.w, crop.h) * 0.22);
   const pad = Math.round(size * 0.14);
-  const corner = el.camCorner.value;
-  const x = corner.endsWith('l') ? pad : crop.w - size - pad;
-  const y = corner.startsWith('t') ? pad : crop.h - size - pad;
-
+  const c = el.camCorner.value;
+  const x = c.endsWith('l') ? pad : crop.w - size - pad;
+  const y = c.startsWith('t') ? pad : crop.h - size - pad;
   const vw = el.camVideo.videoWidth, vh = el.camVideo.videoHeight;
   if (!vw || !vh) return;
-
-  const side = Math.min(vw, vh);
-  const sx = (vw - side) / 2, sy = (vh - side) / 2;
+  const side = Math.min(vw, vh), sx = (vw - side) / 2, sy = (vh - side) / 2;
 
   ctx.save();
   ctx.beginPath();
@@ -423,15 +356,14 @@ function drawCamera(ctx, crop) {
   ctx.restore();
 }
 
-function pickMimeType() {
-  return ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+const pickMimeType = () =>
+  ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
     .find((t) => MediaRecorder.isTypeSupported(t)) || 'video/webm';
-}
 
 function togglePause() {
   if (state.status === 'recording') {
     state.recorder.pause();
-    clearInterval(state.drawTimer);          // stop feeding frames while paused
+    clearInterval(state.drawTimer);
     state.pauseStartedAt = Date.now();
     setStatus('paused');
   } else if (state.status === 'paused') {
@@ -445,25 +377,21 @@ async function stopRecording() {
   if (state.status === 'idle' || !state.recorder) return;
 
   const recorder = state.recorder;
-  const finished = new Promise((res) => recorder.addEventListener('stop', res, { once: true }));
+  const done = new Promise((res) => recorder.addEventListener('stop', res, { once: true }));
   if (recorder.state === 'paused') recorder.resume();
   recorder.stop();
-  await finished;
+  await done;
 
   showView('busy');
   el.busyText.textContent = 'Saving';
   el.busySub.textContent = 'Writing the last few seconds';
 
   await cleanup();
-
-  // Every queued chunk has to land before the file is closed.
-  try { await state.writeQueue; } catch { /* recorded below */ }
+  try { await state.writeQueue; } catch { /* reported below */ }
 
   const format = el.format.value;
   el.busyText.textContent = format === 'mp4' ? 'Converting to MP4' : 'Finishing';
-  el.busySub.textContent = format === 'mp4'
-    ? 'This takes about as long as the recording'
-    : 'Just a moment';
+  el.busySub.textContent = format === 'mp4' ? 'This takes about as long as the recording' : 'Just a moment';
 
   const result = await window.api.endFile({ format, fps: Number(el.fps.value) });
   state.outPath = result.path;
@@ -473,10 +401,9 @@ async function stopRecording() {
   window.api.setCompact(false);
   showView('setup');
 
-  if (!result.path) return setStatusBar('Nothing was recorded.', 'error');
-  if (state.writeFailed) return setStatusBar('Recording saved, but some data was dropped.', 'error');
-  if (result.warning) return setStatusBar(result.warning, 'error');
-
+  if (!result.path) return setStatusBar('Nothing was recorded.', 'err');
+  if (state.writeFailed) return setStatusBar('Saved, but some data was dropped.', 'err');
+  if (result.warning) return setStatusBar(result.warning, 'err');
   setStatusBar(`Saved ${result.path.split(/[\\/]/).pop()}`, 'ok');
 }
 
@@ -484,39 +411,30 @@ async function cleanup() {
   clearInterval(state.drawTimer);
   clearInterval(state.tick);
   cancelAnimationFrame(state.rafMeter);
-
   if (state.borderShown) { window.api.hideBorder(); state.borderShown = false; }
-
   state.streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   state.streams = [];
-
   if (state.audioCtx) { try { await state.audioCtx.close(); } catch {} }
-  state.audioCtx = null;
-  state.analyser = null;
-  state.recorder = null;
-
+  state.audioCtx = null; state.analyser = null; state.recorder = null;
   el.screenVideo.srcObject = null;
   el.camVideo.srcObject = null;
   resetMeter();
 }
 
 /* ------------------------------------------------------------------ */
-/* Views and state                                                     */
+/* Views                                                               */
 /* ------------------------------------------------------------------ */
 
-function showView(name) {
-  Object.entries(el.views).forEach(([key, node]) => { node.hidden = key !== name; });
-}
+const showView = (name) =>
+  Object.entries(el.views).forEach(([k, n]) => { n.hidden = k !== name; });
 
 function setStatus(status) {
   state.status = status;
   window.api.setState(status);
-
   const active = status !== 'idle';
   if (active) showView('recording');
   window.api.setCompact(active);
-
-  el.tally.classList.toggle('paused', status === 'paused');
+  el.tally.classList.toggle('pause', status === 'paused');
   el.pauseBtn.textContent = status === 'paused' ? 'Resume' : 'Pause';
 }
 
@@ -529,18 +447,18 @@ function startClock() {
 }
 
 function formatClock(ms) {
-  const t = Math.max(0, Math.floor(ms / 1000));
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(t / 3600))}:${pad(Math.floor(t / 60) % 60)}:${pad(t % 60)}`;
+  const t = Math.max(0, Math.floor(ms / 1000)), p = (n) => String(n).padStart(2, '0');
+  return `${p(Math.floor(t / 3600))}:${p(Math.floor(t / 60) % 60)}:${p(t % 60)}`;
 }
 
 function formatBytes(b) {
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
-  if (b < 1024 ** 3) return `${(b / 1024 / 1024).toFixed(1)} MB`;
-  return `${(b / 1024 ** 3).toFixed(2)} GB`;
+  if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`;
+  if (b < 1073741824) return `${(b / 1048576).toFixed(1)} MB`;
+  return `${(b / 1073741824).toFixed(2)} GB`;
 }
 
-const bars = [...el.meter.children];
+const bars = [];
+for (let i = 0; i < 15; i++) bars.push(el.meter.appendChild(document.createElement('i')));
 
 function runMeter() {
   const data = new Uint8Array(state.analyser.frequencyBinCount);
@@ -552,7 +470,7 @@ function runMeter() {
       for (let j = i * step; j < (i + 1) * step; j++) sum += data[j];
       const level = sum / step / 255;
       bar.style.height = `${2 + level * 11}px`;
-      bar.className = level > 0.75 ? 'peak' : level > 0.05 ? 'on' : '';
+      bar.className = level > 0.75 ? 'pk' : level > 0.05 ? 'on' : '';
     });
     state.rafMeter = requestAnimationFrame(loop);
   };
@@ -563,98 +481,108 @@ const resetMeter = () => bars.forEach((b) => { b.style.height = '2px'; b.classNa
 
 function setStatusBar(text, kind) {
   el.hint.textContent = text || DEFAULT_HINT;
-  const bar = el.hint.parentElement;
-  bar.classList.toggle('error', kind === 'error');
-  bar.classList.toggle('ok', kind === 'ok');
-  el.statusDot.hidden = !kind;
-  el.statusDot.className = `status-dot ${kind || ''}`;
-  el.statusAction.hidden = !(kind && state.outPath);
+  el.statusbar.classList.toggle('err', kind === 'err');
+  el.statusDot.className = `dot ${kind === 'ok' ? '' : kind === 'err' ? 'err' : 'idle'}`;
+  el.statusAction.hidden = !(kind === 'ok' && state.outPath);
 }
 
-const setHint = (text, isError) => setStatusBar(text, isError ? 'error' : null);
-
 function friendlyError(err) {
-  const name = err && err.name;
-  if (name === 'NotAllowedError') return 'Windows blocked the capture. Check privacy settings.';
-  if (name === 'NotFoundError') return 'That window closed. Refresh the list and try again.';
-  if (name === 'NotReadableError') return 'Another app is using that camera or microphone.';
+  const n = err && err.name;
+  if (n === 'NotAllowedError') return 'Windows blocked the capture. Check privacy settings.';
+  if (n === 'NotFoundError') return 'That window closed. Refresh the list and try again.';
+  if (n === 'NotReadableError') return 'Another app is using that camera or microphone.';
   return (err && err.message) || 'Could not start the recording.';
 }
 
-function waitForFrame(video) {
-  return new Promise((resolve) => {
-    if (video.videoWidth) return resolve();
-    video.addEventListener('loadedmetadata', resolve, { once: true });
-  });
-}
+const waitForFrame = (v) => new Promise((res) => {
+  if (v.videoWidth) return res();
+  v.addEventListener('loadedmetadata', res, { once: true });
+});
 
 /* ------------------------------------------------------------------ */
-/* Mode, pages, summary                                                */
+/* Mode, pages, preview                                                */
 /* ------------------------------------------------------------------ */
 
 async function setMode(mode) {
   state.mode = mode;
+  $$('.mode').forEach((b) => {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', String(on));
+  });
 
-  el.modes.querySelectorAll('.mode').forEach((b) =>
-    b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
+  const m = MODES[mode];
+  el.mTitle.textContent = m.t;
+  el.mDesc.textContent = m.d;
+  el.pvDesc.textContent = m.pd;
+  Object.assign(el.pvShot.style, { left: '', top: '', right: '', bottom: '' }, m.box);
 
-  el.modeTitle.textContent = MODES[mode].title;
-  el.modeDesc.textContent = MODES[mode].desc;
-
-  el.panelScreen.hidden = mode === 'window';
-  el.panelWindow.hidden = mode !== 'window';
-  el.panelFixed.hidden = mode !== 'fixed';
-  el.panelRegion.hidden = !(mode === 'region' || mode === 'repeat');
+  el.pScreen.hidden = mode === 'window';
+  el.pWindow.hidden = mode !== 'window';
+  el.pFixed.hidden = mode !== 'fixed';
+  el.pRegion.hidden = !(mode === 'region' || mode === 'repeat');
 
   if (mode === 'window') await loadSources();
-
   savePrefs();
+  updatePreviewSize();
   updateSummary();
-  setHint('');
+  setStatusBar('');
 }
 
-function showPage(page) {
-  el.nav.querySelectorAll('.nav-item[data-page]').forEach((b) =>
-    b.classList.toggle('active', b.dataset.page === page));
-  document.querySelectorAll('.page').forEach((p) =>
-    p.classList.toggle('active', p.dataset.page === page));
+// Shows the real pixel size that will be recorded, so a broken mode is
+// visible before you record rather than after.
+function updatePreviewSize() {
+  const src = sourceFor(activeSourceId());
+  if (state.mode === 'window') { el.pvSize.textContent = 'Matches the window'; return; }
+  if (!src || !src.metrics) { el.pvSize.textContent = 'Detecting'; return; }
+
+  const b = src.metrics.bounds;
+  const scale = src.metrics.scaleFactor || 1;
+  const w = Math.round(b.width * scale), h = Math.round(b.height * scale);
+  const c = resolveCrop(state.mode, src, w, h);
+  el.pvSize.textContent = `${c.w - c.w % 2} x ${c.h - c.h % 2}`;
 }
+
+const showPage = (page) => {
+  $$('.nav[data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === page));
+  $$('.page').forEach((p) => p.classList.toggle('on', p.dataset.page === page));
+};
 
 function updateRegionLabel() {
   const r = state.lastRegion;
   el.regionInfo.textContent = r
-    ? `Saved area, ${Math.round(r.w * 100)}% × ${Math.round(r.h * 100)}% of the screen`
+    ? `Saved area, ${Math.round(r.w * 100)}% x ${Math.round(r.h * 100)}% of the screen`
     : 'No area chosen yet';
-  const repeatBtn = el.modes.querySelector('.mode[data-mode="repeat"]');
-  if (repeatBtn) repeatBtn.disabled = !r;
+  const btn = el.modes.querySelector('.mode[data-mode="repeat"]');
+  if (btn) btn.disabled = !r;
 }
 
 function updateSummary() {
-  const parts = [];
-  const sound = [];
-  if (el.sysAudio.checked) sound.push('computer sound');
-  if (el.micAudio.checked) sound.push('microphone');
-  parts.push(sound.length ? `Sound: ${sound.join(' + ')}` : 'No sound');
-  if (el.camOn.checked) parts.push('webcam overlay on');
-  parts.push(`${el.fps.value} fps`);
-  parts.push(el.format.value === 'mp4' ? 'MP4' : 'WebM');
-  el.summary.textContent = parts.join(' · ');
+  const chip = (label, on) => `<span class="chip${on ? '' : ' off'}">${label}</span>`;
+  el.summary.innerHTML = [
+    chip(el.sysAudio.checked ? 'Computer sound' : 'Computer sound off', el.sysAudio.checked),
+    chip(el.micAudio.checked ? 'Microphone' : 'Microphone off', el.micAudio.checked),
+    chip(el.camOn.checked ? 'Webcam' : 'Webcam off', el.camOn.checked),
+    chip(`${el.fps.value} fps`, true),
+    chip(el.format.value === 'mp4' ? 'MP4' : 'WebM', true)
+  ].join('');
 }
 
-function updateFormatNote() {
+const updateFormatNote = () => {
   el.formatNote.textContent = el.format.value === 'mp4'
-    ? 'Converting takes roughly as long as the recording itself. Choose WebM if you want the file straight away.'
-    : 'Saved the moment you stop. Plays in any browser, VLC, and most editors.';
-}
+    ? 'MP4 needs a conversion pass that takes roughly as long as the recording.'
+    : 'WebM is written the moment you press Save. It plays in any browser, VLC, and most editors.';
+};
 
 async function pickArea() {
   const src = sourceFor(el.screenSource.value);
   const rect = await window.api.selectRegion(src ? src.displayId : null);
-  if (!rect) { setHint('Area selection cancelled.'); return false; }
+  if (!rect) { setStatusBar('Area selection cancelled.'); return false; }
   state.lastRegion = rect;
   await window.api.setSettings({ lastRegion: rect });
   updateRegionLabel();
-  setHint('');
+  updatePreviewSize();
+  setStatusBar('');
   return true;
 }
 
@@ -668,48 +596,43 @@ function syncEnabled() {
   el.camCorner.disabled = !el.camOn.checked;
 }
 
-function savePrefs() {
-  window.api.setSettings({
-    mode: state.mode,
-    fixedSize: el.fixedSize.value,
-    sysAudio: el.sysAudio.checked,
-    micAudio: el.micAudio.checked,
-    camOn: el.camOn.checked,
-    camCorner: el.camCorner.value,
-    format: el.format.value,
-    fps: el.fps.value,
-    quality: el.quality.value,
-    countdown: el.countdownOn.checked,
-    showBorder: el.showBorder.checked
-  });
-}
+const savePrefs = () => window.api.setSettings({
+  mode: state.mode, fixedSize: el.fixedSize.value,
+  sysAudio: el.sysAudio.checked, micAudio: el.micAudio.checked,
+  camOn: el.camOn.checked, camCorner: el.camCorner.value,
+  format: el.format.value, fps: el.fps.value, quality: el.quality.value,
+  countdown: el.countdownOn.checked, showBorder: el.showBorder.checked
+});
 
 el.modes.addEventListener('click', (e) => {
-  const btn = e.target.closest('.mode');
-  if (btn && !btn.disabled) setMode(btn.dataset.mode);
+  const b = e.target.closest('.mode');
+  if (b && !b.disabled) setMode(b.dataset.mode);
 });
 
 el.nav.addEventListener('click', (e) => {
-  const btn = e.target.closest('.nav-item[data-page]');
-  if (btn) showPage(btn.dataset.page);
+  const b = e.target.closest('.nav[data-page]');
+  if (b) showPage(b.dataset.page);
 });
 
-[el.sysAudio, el.micAudio, el.camOn, el.camCorner, el.fps, el.quality, el.fixedSize,
- el.countdownOn, el.showBorder].forEach((c) =>
-  c.addEventListener('change', () => { syncEnabled(); savePrefs(); updateSummary(); }));
+[el.sysAudio, el.micAudio, el.camOn, el.camCorner, el.quality, el.countdownOn, el.showBorder]
+  .forEach((c) => c.addEventListener('change', () => { syncEnabled(); savePrefs(); updateSummary(); }));
+
+[el.fps, el.fixedSize].forEach((c) => c.addEventListener('change', () => {
+  savePrefs(); updateSummary(); updatePreviewSize();
+}));
 
 el.format.addEventListener('change', () => { updateFormatNote(); savePrefs(); updateSummary(); });
-
+el.screenSource.addEventListener('change', updatePreviewSize);
+el.refresh.addEventListener('click', loadSources);
 el.pickArea.addEventListener('click', pickArea);
-el.refreshWindows.addEventListener('click', loadSources);
 
 el.chooseFolder.addEventListener('click', async () => {
   const res = await window.api.chooseFolder();
   if (!res) return;
-  if (res.error) return setHint(res.error, true);
+  if (res.error) return setStatusBar(res.error, 'err');
   el.savePath.textContent = res.path;
   el.savePath.title = res.path;
-  setHint('');
+  setStatusBar('');
 });
 
 el.recordBtn.addEventListener('click', startRecording);
@@ -720,22 +643,23 @@ el.cancelCount.addEventListener('click', () => { state.countCancelled = true; })
 const openFolder = () => window.api.reveal(null);
 el.openFolder.addEventListener('click', openFolder);
 el.folderBtn.addEventListener('click', openFolder);
-
 el.statusAction.addEventListener('click', () => window.api.reveal(state.outPath));
 
 $('btn-min').addEventListener('click', () => window.api.minimize());
+$('btn-min2').addEventListener('click', () => window.api.minimize());
 $('btn-hide').addEventListener('click', () => window.api.hide());
 
-window.api.onHotkey((action) => {
-  if (action === 'toggle') state.status === 'idle' ? startRecording() : stopRecording();
-  else if (action === 'pause') togglePause();
-  else if (action === 'stop') stopRecording();
+window.api.onHotkey((a) => {
+  if (a === 'toggle') state.status === 'idle' ? startRecording() : stopRecording();
+  else if (a === 'pause') togglePause();
+  else if (a === 'stop') stopRecording();
 });
 
 window.api.onConvertProgress((p) => {
   el.busyText.textContent = p.label || 'Finishing';
   el.busySub.textContent = p.time || '';
 });
+
 navigator.mediaDevices.addEventListener('devicechange', loadDevices);
 
 (async function init() {
@@ -758,16 +682,15 @@ navigator.mediaDevices.addEventListener('devicechange', loadDevices);
 
   el.savePath.textContent = saved.savePath || '';
   el.savePath.title = saved.savePath || '';
+  el.aboutVersion.textContent = `ScreenRec, version ${saved.version || ''}`;
 
   updateRegionLabel();
   updateFormatNote();
   syncEnabled();
-
-  const startMode = (saved.mode && MODES[saved.mode] && !(saved.mode === 'repeat' && !state.lastRegion))
-    ? saved.mode : 'full';
-  await setMode(startMode);
+  await setMode(saved.mode && MODES[saved.mode] && !(saved.mode === 'repeat' && !state.lastRegion)
+    ? saved.mode : 'full');
 
   showPage('record');
   showView('setup');
-  setHint('');
+  setStatusBar('');
 })();

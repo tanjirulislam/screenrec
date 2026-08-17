@@ -290,7 +290,9 @@ ipcMain.handle('region:select', async (_e, displayId) => openRegionOverlay(displ
 ipcMain.handle('border:show', async (_e, { displayId, region }) => showBorder(displayId, region));
 ipcMain.handle('border:hide', async () => hideBorder());
 
-ipcMain.handle('settings:get', async () => ({ ...readSettings(), savePath: outputDir() }));
+ipcMain.handle('settings:get', async () => ({
+  ...readSettings(), savePath: outputDir(), version: app.getVersion()
+}));
 ipcMain.handle('settings:set', async (_e, patch) => writeSettings(patch));
 
 ipcMain.handle('settings:chooseFolder', async () => {

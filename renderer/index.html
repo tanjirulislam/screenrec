@@ -1,213 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data: blob:" />
-  <title>Screen Recorder</title>
-  <link rel="stylesheet" href="styles.css" />
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data: blob:" />
+<title>ScreenRec</title>
+<link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
-<header class="titlebar">
-  <span class="brand"><span class="brand-mark"></span>ScreenRec</span>
-  <div class="titlebar-actions">
-    <button id="btn-min" class="chrome-btn" aria-label="Minimize">
-      <svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg>
-    </button>
-    <button id="btn-hide" class="chrome-btn danger" aria-label="Close">
-      <svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg>
-    </button>
+<!-- ================= MAIN ================= -->
+<div class="window" id="view-setup">
+  <div class="titlebar">
+    <span class="brand"><span class="brand-mark"></span>ScreenRec</span>
+    <div class="tb-actions">
+      <button class="tb-btn" id="btn-min" aria-label="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button>
+      <button class="tb-btn x" id="btn-hide" aria-label="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+    </div>
   </div>
-</header>
-
-<!-- ================= FULL LAYOUT ================= -->
-<div id="view-setup">
 
   <div class="toolbar">
     <div class="modes" id="modes" role="radiogroup" aria-label="What to record">
-      <button class="mode" data-mode="full" role="radio" aria-checked="true">
+      <button class="mode on" data-mode="full" role="radio" aria-checked="true">
         <svg viewBox="0 0 24 20"><rect x="1.5" y="1.5" width="21" height="17" rx="2"/><path d="M1.5 1.5l21 17M22.5 1.5l-21 17"/></svg>
-        <span>Full screen</span>
-      </button>
+        <span>Full screen</span></button>
       <button class="mode" data-mode="notaskbar" role="radio" aria-checked="false">
         <svg viewBox="0 0 24 20"><rect x="1.5" y="1.5" width="21" height="17" rx="2"/><path d="M1.5 14.5h21" class="dim"/></svg>
-        <span>No taskbar</span>
-      </button>
+        <span>No taskbar</span></button>
       <button class="mode" data-mode="region" role="radio" aria-checked="false">
         <svg viewBox="0 0 24 20"><rect x="1.5" y="1.5" width="21" height="17" rx="2" class="dash"/><path d="M8 8h8v5H8z"/></svg>
-        <span>Select area</span>
-      </button>
+        <span>Select area</span></button>
       <button class="mode" data-mode="fixed" role="radio" aria-checked="false">
         <svg viewBox="0 0 24 20"><path d="M2.5 1.5v17M21.5 1.5v17"/><rect x="6" y="4.5" width="12" height="11" rx="1"/></svg>
-        <span>Fixed size</span>
-      </button>
+        <span>Fixed size</span></button>
       <button class="mode" data-mode="window" role="radio" aria-checked="false">
         <svg viewBox="0 0 24 20"><rect x="1.5" y="1.5" width="21" height="17" rx="2"/><path d="M1.5 6.5h21"/></svg>
-        <span>Window</span>
-      </button>
+        <span>Window</span></button>
       <button class="mode" data-mode="repeat" role="radio" aria-checked="false">
         <svg viewBox="0 0 24 20"><path d="M5 8a7 7 0 1 1 0 5"/><path d="M5 4v4.5h4.5"/></svg>
-        <span>Last area</span>
-      </button>
+        <span>Last area</span></button>
     </div>
-
-    <button id="btn-record" class="rec-btn" title="Start recording (Ctrl+Shift+R)">
-      <span class="rec-ring"><span class="rec-dot"></span></span>
-      <span class="rec-label">REC</span>
+    <button class="rec-btn" id="btn-record" title="Start recording (Ctrl+Shift+R)">
+      <span class="rec-ring"><span class="rec-dot"></span></span>REC
     </button>
   </div>
 
   <div class="body">
     <nav class="sidebar" id="nav">
-      <button class="nav-item active" data-page="record">
-        <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.5"/></svg><span>Record</span>
-      </button>
-      <button class="nav-item" data-page="video">
-        <svg viewBox="0 0 20 20"><rect x="1.5" y="4.5" width="12" height="11" rx="2"/><path d="M14.5 8.5l4-2.5v8l-4-2.5z"/></svg><span>Video</span>
-      </button>
-      <button class="nav-item" data-page="audio">
-        <svg viewBox="0 0 20 20"><path d="M4 7.5h3l4-3v11l-4-3H4z"/><path d="M14 6.5a5 5 0 0 1 0 7"/></svg><span>Audio</span>
-      </button>
-      <button class="nav-item" data-page="output">
-        <svg viewBox="0 0 20 20"><path d="M2 5.5h6l1.5 2H18v9H2z"/></svg><span>Output</span>
-      </button>
-      <button class="nav-item" data-page="about">
-        <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M10 9v5M10 6.2v.1"/></svg><span>About</span>
-      </button>
-      <div class="nav-spacer"></div>
-      <button class="nav-item subtle" id="btn-folder">
-        <svg viewBox="0 0 20 20"><path d="M2 5.5h6l1.5 2H18v9H2z"/></svg><span>Recordings</span>
-      </button>
+      <button class="nav on" data-page="record"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.5"/></svg>Record</button>
+      <button class="nav" data-page="video"><svg viewBox="0 0 20 20"><rect x="1.5" y="4.5" width="12" height="11" rx="2"/><path d="M14.5 8.5l4-2.5v8l-4-2.5z"/></svg>Video</button>
+      <button class="nav" data-page="audio"><svg viewBox="0 0 20 20"><path d="M4 7.5h3l4-3v11l-4-3H4z"/><path d="M14 6.5a5 5 0 0 1 0 7"/></svg>Audio</button>
+      <button class="nav" data-page="output"><svg viewBox="0 0 20 20"><path d="M2 5.5h6l1.5 2H18v9H2z"/></svg>Output</button>
+      <button class="nav" data-page="about"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M10 9v5M10 6.2v.1"/></svg>About</button>
+      <div class="spacer"></div>
+      <button class="nav quiet" id="btn-folder"><svg viewBox="0 0 20 20"><path d="M2 5.5h6l1.5 2H18v9H2z"/></svg>Recordings</button>
     </nav>
 
     <main class="content">
 
-      <!-- ---------- RECORD ---------- -->
-      <section class="page active" data-page="record">
-        <div class="page-head">
-          <h1 id="mode-title">Full screen</h1>
-          <p id="mode-desc">Records everything on the screen you choose.</p>
+      <section class="page on" data-page="record">
+        <div class="head">
+          <h1 id="m-title">Full screen</h1>
+          <p id="m-desc">Records everything on the screen you choose.</p>
         </div>
 
-        <div class="panel" id="panel-screen">
-          <label class="field">
-            <span class="field-label">Screen</span>
-            <select id="screen-source" class="control"></select>
-          </label>
+        <div class="preview">
+          <div class="screen">
+            <div class="taskbar"></div>
+            <div class="shot" id="pv-shot" style="left:0;top:0;right:0;bottom:0"></div>
+          </div>
+          <div class="preview-meta">
+            <div class="cap">Capture size</div>
+            <div class="val" id="pv-size">Detecting</div>
+            <div class="desc" id="pv-desc">The whole screen, taskbar included.</div>
+          </div>
         </div>
 
-        <div class="panel" id="panel-window" hidden>
-          <label class="field">
-            <span class="field-label">Window</span>
-            <select id="window-source" class="control"></select>
-          </label>
-          <button id="btn-refresh-windows" class="btn small">Refresh list</button>
+        <div class="panel" id="p-screen">
+          <span class="label">Screen</span>
+          <select id="screen-source"></select>
         </div>
 
-        <div class="panel" id="panel-fixed" hidden>
-          <label class="field">
-            <span class="field-label">Size</span>
-            <select id="fixed-size" class="control">
-              <option value="1920x1080">1920 × 1080, Full HD</option>
-              <option value="1280x720" selected>1280 × 720, HD</option>
-              <option value="1080x1080">1080 × 1080, Square</option>
-              <option value="1080x1920">1080 × 1920, Vertical</option>
-              <option value="854x480">854 × 480, Small</option>
-            </select>
-          </label>
+        <div class="panel" id="p-window" hidden>
+          <span class="label">Window</span>
+          <div class="inline">
+            <select id="window-source" style="flex:1"></select>
+            <button class="btn sm" id="btn-refresh">Refresh</button>
+          </div>
+        </div>
+
+        <div class="panel" id="p-fixed" hidden>
+          <span class="label">Size</span>
+          <select id="fixed-size">
+            <option value="1920x1080">1920 x 1080, Full HD</option>
+            <option value="1280x720" selected>1280 x 720, HD</option>
+            <option value="1080x1080">1080 x 1080, Square</option>
+            <option value="1080x1920">1080 x 1920, Vertical</option>
+            <option value="854x480">854 x 480, Small</option>
+          </select>
           <p class="note">Centred on the selected screen.</p>
         </div>
 
-        <div class="panel" id="panel-region" hidden>
+        <div class="panel" id="p-region" hidden>
+          <span class="label">Area</span>
           <div class="inline">
-            <output id="region-info" class="readout-box">No area chosen yet</output>
-            <button id="btn-pick-area" class="btn small">Choose area</button>
+            <output class="box" id="region-info">No area chosen yet</output>
+            <button class="btn sm" id="btn-pick-area">Choose area</button>
           </div>
-          <p class="note">You can also just press REC, it will ask you to drag one.</p>
+          <p class="note">You can also press REC straight away and it will ask you to drag one.</p>
         </div>
 
         <div class="summary" id="summary"></div>
       </section>
 
-      <!-- ---------- VIDEO ---------- -->
       <section class="page" data-page="video">
-        <div class="page-head"><h1>Video</h1><p>Quality, format, and on-screen cues.</p></div>
-
+        <div class="head"><h1>Video</h1><p>Quality, file type, and on screen cues.</p></div>
         <div class="panel">
-          <div class="grid-2">
-            <label class="field">
-              <span class="field-label">File type</span>
-              <select id="format" class="control">
-                <option value="webm" selected>WebM, smaller, saves instantly</option>
+          <div class="two">
+            <div class="field"><span class="label">File type</span>
+              <select id="format">
+                <option value="webm" selected>WebM, smaller and saves instantly</option>
                 <option value="mp4">MP4, plays anywhere</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field-label">Quality</span>
-              <select id="quality" class="control">
+              </select></div>
+            <div class="field"><span class="label">Quality</span>
+              <select id="quality">
                 <option value="2500000">Small file</option>
                 <option value="5000000" selected>Balanced</option>
                 <option value="10000000">Sharp</option>
-              </select>
-            </label>
+              </select></div>
           </div>
           <p class="note" id="format-note"></p>
         </div>
-
         <div class="panel">
-          <label class="field third">
-            <span class="field-label">Frame rate</span>
-            <select id="fps" class="control">
-              <option value="24">24 fps</option>
-              <option value="30" selected>30 fps</option>
-              <option value="60">60 fps</option>
-            </select>
-          </label>
-          <p class="note">Higher frame rates look smoother but make bigger files.</p>
+          <div class="two">
+            <div class="field"><span class="label">Frame rate</span>
+              <select id="fps">
+                <option value="24">24 fps</option>
+                <option value="30" selected>30 fps</option>
+                <option value="60">60 fps</option>
+              </select></div>
+          </div>
+          <p class="note">Higher frame rates look smoother and make bigger files.</p>
         </div>
-
         <div class="panel">
-          <label class="switch">
-            <input type="checkbox" id="countdown" checked />
-            <span><strong>Count down from 3</strong><em>Gives you time to switch windows first</em></span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="show-border" checked />
-            <span><strong>Outline the recorded area</strong><em>A blue frame marks what is being captured. It never appears in the video.</em></span>
-          </label>
+          <label class="check"><input type="checkbox" id="countdown" checked><span><b>Count down from 3</b><i>Gives you a moment to switch windows before capture begins</i></span></label>
+          <label class="check"><input type="checkbox" id="show-border" checked><span><b>Outline the recorded area</b><i>A red frame marks what is being captured. It never appears in the video.</i></span></label>
         </div>
       </section>
 
-      <!-- ---------- AUDIO ---------- -->
       <section class="page" data-page="audio">
-        <div class="page-head"><h1>Audio</h1><p>Sound sources and webcam.</p></div>
-
+        <div class="head"><h1>Audio</h1><p>Sound sources and webcam overlay.</p></div>
         <div class="panel">
-          <label class="switch">
-            <input type="checkbox" id="sys-audio" checked />
-            <span><strong>Computer sound</strong><em>Anything you can hear through your speakers</em></span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="mic-audio" />
-            <span><strong>Microphone</strong><em>Your voice</em></span>
-          </label>
-          <select id="mic-device" class="control sub" disabled></select>
-          <div class="meter" id="meter" aria-hidden="true">
-            <span></span><span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span><span></span>
-          </div>
+          <label class="check"><input type="checkbox" id="sys-audio" checked><span><b>Computer sound</b><i>Anything playing through your speakers</i></span></label>
+          <label class="check"><input type="checkbox" id="mic-audio"><span><b>Microphone</b><i>Your voice</i></span></label>
+          <select class="sub" id="mic-device" disabled></select>
+          <div class="meter" id="meter"></div>
         </div>
-
         <div class="panel">
-          <label class="switch">
-            <input type="checkbox" id="cam-on" />
-            <span><strong>Webcam overlay</strong><em>A round camera view in one corner</em></span>
-          </label>
-          <div class="grid-2 sub">
-            <select id="cam-device" class="control" disabled></select>
-            <select id="cam-corner" class="control" disabled>
+          <label class="check"><input type="checkbox" id="cam-on"><span><b>Webcam overlay</b><i>A round camera view in one corner of the video</i></span></label>
+          <div class="two sub">
+            <select id="cam-device" disabled></select>
+            <select id="cam-corner" disabled>
               <option value="br">Bottom right</option>
               <option value="bl">Bottom left</option>
               <option value="tr">Top right</option>
@@ -217,74 +170,84 @@
         </div>
       </section>
 
-      <!-- ---------- OUTPUT ---------- -->
       <section class="page" data-page="output">
-        <div class="page-head"><h1>Output</h1><p>Where recordings are saved.</p></div>
+        <div class="head"><h1>Output</h1><p>Where recordings are saved.</p></div>
         <div class="panel">
-          <span class="field-label">Folder</span>
+          <span class="label">Folder</span>
           <div class="inline">
-            <output id="save-path" class="readout-box path"></output>
-            <button id="btn-choose-folder" class="btn small">Change</button>
-            <button id="btn-open-folder" class="btn small">Open</button>
+            <output class="box path" id="save-path"></output>
+            <button class="btn sm" id="btn-choose-folder">Change</button>
+            <button class="btn sm" id="btn-open-folder">Open</button>
           </div>
-          <p class="note">Files are named by date and time, so nothing gets overwritten.</p>
+          <p class="note">Files are named by date and time, so nothing is ever overwritten.</p>
         </div>
       </section>
 
-      <!-- ---------- ABOUT ---------- -->
       <section class="page" data-page="about">
-        <div class="page-head"><h1>About</h1><p>ScreenRec, version 1.3.0</p></div>
+        <div class="head"><h1>About</h1><p id="about-version">ScreenRec</p></div>
         <div class="panel">
-          <span class="field-label">Keyboard shortcuts</span>
+          <span class="label">Keyboard shortcuts</span>
           <table class="keys">
-            <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd></td><td>Start or stop</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd></td><td>Start or save</td></tr>
             <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>P</kbd></td><td>Pause or resume</td></tr>
-            <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>X</kbd></td><td>Stop</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>X</kbd></td><td>Save and stop</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>Cancel area selection</td></tr>
           </table>
           <p class="note">Shortcuts work anywhere in Windows, even with this window closed.</p>
         </div>
         <div class="panel">
-          <p class="note">Closing this window keeps ScreenRec running in the system tray so the shortcuts stay active. Choose <strong>Exit</strong> from the tray icon to quit completely.</p>
+          <p class="note">Closing this window keeps ScreenRec in the system tray so the shortcuts stay active. Choose Exit from the tray icon to quit completely.</p>
         </div>
       </section>
 
     </main>
   </div>
 
-  <footer class="statusbar">
-    <span class="status-dot" id="status-dot"></span>
-    <span id="hint">Press Ctrl+Shift+R anywhere to start or stop</span>
-    <button id="btn-status-action" class="link-btn" hidden>Show file</button>
-  </footer>
-</div>
-
-<!-- ================= COUNTDOWN ================= -->
-<div id="view-countdown" hidden>
-  <div class="count" id="count-number">3</div>
-  <p class="count-label">Get ready</p>
-  <button id="btn-cancel-count" class="btn small">Cancel</button>
+  <div class="status" id="statusbar">
+    <span class="dot idle" id="status-dot"></span>
+    <span id="hint">Press Ctrl+Shift+R anywhere to start or save</span>
+    <button class="link" id="btn-status-action" hidden>Show file</button>
+  </div>
 </div>
 
 <!-- ================= RECORDING ================= -->
-<div id="view-recording" hidden>
-  <div class="live">
-    <span class="tally" id="tally"></span>
-    <span class="timecode" id="timecode">00:00:00</span>
-    <span class="filesize" id="filesize"></span>
+<div class="compact" id="view-recording" hidden>
+  <div class="titlebar">
+    <span class="brand"><span class="brand-mark"></span>ScreenRec</span>
+    <div class="tb-actions">
+      <button class="tb-btn" id="btn-min2" aria-label="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button>
+    </div>
   </div>
-  <div class="grid-2">
-    <button id="btn-pause" class="btn">Pause</button>
-    <button id="btn-stop" class="btn primary">Save</button>
+  <div class="compact-body">
+    <div class="live">
+      <span class="tally" id="tally"></span>
+      <span class="tc" id="timecode">00:00:00</span>
+      <span class="size" id="filesize"></span>
+    </div>
+    <div class="live-actions">
+      <button class="btn" id="btn-pause">Pause</button>
+      <button class="btn red" id="btn-stop">Save</button>
+    </div>
   </div>
 </div>
 
-<!-- ================= BUSY ================= -->
-<div id="view-busy" hidden>
-  <div class="centred">
-    <div class="spinner"></div>
-    <p id="busy-text">Saving</p>
-    <p id="busy-sub" class="busy-sub"></p>
+<!-- ================= COUNTDOWN ================= -->
+<div class="compact" id="view-countdown" hidden>
+  <div class="titlebar"><span class="brand"><span class="brand-mark"></span>ScreenRec</span></div>
+  <div class="count-wrap">
+    <div class="count" id="count-number">3</div>
+    <p class="count-sub">Recording starts in a moment</p>
+    <button class="btn sm" id="btn-cancel-count">Cancel</button>
+  </div>
+</div>
+
+<!-- ================= SAVING ================= -->
+<div class="compact" id="view-busy" hidden>
+  <div class="titlebar"><span class="brand"><span class="brand-mark"></span>ScreenRec</span></div>
+  <div class="busy-wrap">
+    <div class="spin"></div>
+    <p class="busy-t" id="busy-text">Saving</p>
+    <p class="busy-s" id="busy-sub"></p>
   </div>
 </div>
 

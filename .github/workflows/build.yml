@@ -1,33 +1,28 @@
 name: Build Windows App
 
-# Runs on every push to main (produces a downloadable artifact), and on
-# every version tag (also publishes a public Release page).
 on:
   push:
     branches: [main]
     tags: ['v*']
-  pull_request:
-    branches: [main]
-  workflow_dispatch:      # adds a "Run workflow" button in the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-
     permissions:
-      contents: write     # needed to create the Release
+      contents: write
 
     steps:
       - name: Check out the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      # Node 20 ships npm 10, which runs package install scripts without
-      # prompting. Newer npm blocks them, and Electron's postinstall is what
-      # downloads electron.exe — without it the build fails.
+      # Node 22 ships an npm that runs package install scripts without
+      # prompting. Electron's postinstall is what downloads electron.exe,
+      # so blocking it fails the build.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: npm install
@@ -35,31 +30,23 @@ jobs:
       - name: Build the installer
         run: npm run build
 
-      # Downloadable from the Actions run page. Kept for 30 days.
       - name: Upload build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ScreenRec-Windows
-          path: |
-            dist/*.exe
-            dist/*.blockmap
+          path: dist/*.exe
           retention-days: 30
           if-no-files-found: error
 
-      # Only for tagged versions: a permanent public download page.
+      # The GitHub CLI is preinstalled on the runner. Using it avoids
+      # downloading a third-party action, which was hitting rate limits.
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.exe
-          generate_release_notes: true
-          body: |
-            ## Download
-
-            - **ScreenRec-Setup.exe** — normal installer, adds a Start Menu shortcut
-            - **ScreenRec-portable.exe** — runs directly, installs nothing
-
-            Windows will show a SmartScreen warning because this build is not
-            code-signed. Choose **More info → Run anyway** to continue.
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.exe \
+            --title "ScreenRec ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "Windows shows a SmartScreen warning because this build is not code signed. Choose More info then Run anyway."
