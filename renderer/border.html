@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+    /* Inset so the frame sits inside the captured area rather than
+       straddling its edge, where half of it would be off-screen. */
+    .frame {
+      position: fixed;
+      inset: 0;
+      border: 3px solid #00B1FF;
+      box-shadow: inset 0 0 0 1px rgba(0, 51, 128, 0.55),
+                  inset 0 0 16px rgba(0, 177, 255, 0.30);
+      pointer-events: none;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.55; }
+    }
+    @media (prefers-reduced-motion: reduce) { .frame { animation: none; } }
+  </style>
+</head>
+<body><div class="frame"></div></body>
+</html>

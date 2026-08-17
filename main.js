@@ -2,7 +2,7 @@
 
 const {
   app, BrowserWindow, ipcMain, desktopCapturer, screen,
-  globalShortcut, Tray, Menu, nativeImage, shell
+  globalShortcut, Tray, Menu, nativeImage, shell, dialog
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -10,29 +10,27 @@ const { spawn } = require('child_process');
 
 let controlWindow = null;
 let overlayWindow = null;
+let borderWindow = null;
 let tray = null;
 
 let writeStream = null;
 let currentPath = null;
 let bytesWritten = 0;
-let uiState = 'idle'; // idle | recording | paused
+let uiState = 'idle';
 
-const OUTPUT_DIR = path.join(app.getPath('videos'), 'ScreenRec');
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const DEFAULT_DIR = path.join(app.getPath('videos'), 'ScreenRec');
 
-const PANEL_SIZE = { width: 420, height: 640 };
-const COMPACT_SIZE = { width: 300, height: 150 };
+const PANEL_SIZE = { width: 780, height: 580 };
+const COMPACT_SIZE = { width: 320, height: 150 };
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
 function readSettings() {
-  try {
-    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); }
+  catch { return {}; }
 }
 
 function writeSettings(patch) {
@@ -46,6 +44,17 @@ function writeSettings(patch) {
   return next;
 }
 
+function outputDir() {
+  const dir = readSettings().savePath || DEFAULT_DIR;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch {
+    fs.mkdirSync(DEFAULT_DIR, { recursive: true });
+    return DEFAULT_DIR;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Windows                                                             */
 /* ------------------------------------------------------------------ */
@@ -56,25 +65,28 @@ function createControlWindow() {
     resizable: false,
     maximizable: false,
     frame: false,
-    backgroundColor: '#F3F3F3',
+    backgroundColor: '#FFFFFF',
     show: false,
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Without this, Chromium throttles timers and rAF whenever the window
+      // is backgrounded or covered. That starves the capture canvas of frames
+      // and the finished video plays back in slow motion.
+      backgroundThrottling: false
     }
   });
 
   controlWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   controlWindow.once('ready-to-show', () => controlWindow.show());
 
-  // Closing parks the app in the tray so the hotkeys keep working.
+  // Keeps the recorder's own window out of the video it is recording.
+  controlWindow.setContentProtection(true);
+
   controlWindow.on('close', (e) => {
-    if (!app.isQuitting) {
-      e.preventDefault();
-      controlWindow.hide();
-    }
+    if (!app.isQuitting) { e.preventDefault(); controlWindow.hide(); }
   });
 
   controlWindow.on('closed', () => { controlWindow = null; });
@@ -82,11 +94,7 @@ function createControlWindow() {
 
 function openRegionOverlay(displayId) {
   return new Promise((resolve) => {
-    const displays = screen.getAllDisplays();
-    const target =
-      displays.find((d) => String(d.id) === String(displayId)) ||
-      screen.getPrimaryDisplay();
-
+    const target = displayFor(displayId);
     const { x, y, width, height } = target.bounds;
     const panelWasVisible = controlWindow && controlWindow.isVisible();
     if (panelWasVisible) controlWindow.hide();
@@ -109,6 +117,7 @@ function openRegionOverlay(displayId) {
     });
 
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    overlayWindow.setContentProtection(true);
     overlayWindow.loadFile(path.join(__dirname, 'renderer', 'overlay.html'));
 
     let settled = false;
@@ -130,21 +139,70 @@ function openRegionOverlay(displayId) {
   });
 }
 
+/**
+ * A click-through frame drawn around whatever is being captured, so it is
+ * obvious that recording is live. Content protection keeps it out of the
+ * video itself — the border is for the person, not the viewer.
+ */
+function showBorder(displayId, region) {
+  hideBorder();
+
+  const display = displayFor(displayId);
+  const b = display.bounds;
+
+  const rect = region
+    ? {
+        x: Math.round(b.x + region.x * b.width),
+        y: Math.round(b.y + region.y * b.height),
+        width: Math.round(region.w * b.width),
+        height: Math.round(region.h * b.height)
+      }
+    : { x: b.x, y: b.y, width: b.width, height: b.height };
+
+  if (rect.width < 8 || rect.height < 8) return;
+
+  borderWindow = new BrowserWindow({
+    ...rect,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false }
+  });
+
+  borderWindow.setIgnoreMouseEvents(true, { forward: true });
+  borderWindow.setAlwaysOnTop(true, 'screen-saver');
+  borderWindow.setContentProtection(true);
+  borderWindow.loadFile(path.join(__dirname, 'renderer', 'border.html'));
+}
+
+function hideBorder() {
+  if (borderWindow && !borderWindow.isDestroyed()) borderWindow.close();
+  borderWindow = null;
+}
+
+function displayFor(displayId) {
+  return screen.getAllDisplays().find((d) => String(d.id) === String(displayId))
+    || screen.getPrimaryDisplay();
+}
+
 /* ------------------------------------------------------------------ */
 /* Tray + hotkeys                                                      */
 /* ------------------------------------------------------------------ */
 
 function trayIcon() {
   const file = path.join(__dirname, 'assets', 'tray.png');
-  if (fs.existsSync(file)) {
-    return nativeImage.createFromPath(file).resize({ width: 16, height: 16 });
-  }
-  return nativeImage.createEmpty();
+  return fs.existsSync(file)
+    ? nativeImage.createFromPath(file).resize({ width: 16, height: 16 })
+    : nativeImage.createEmpty();
 }
 
 function refreshTray() {
   if (!tray) return;
-
   const label = { idle: 'Ready', recording: 'Recording', paused: 'Paused' }[uiState];
 
   tray.setToolTip(`ScreenRec — ${label}`);
@@ -163,7 +221,7 @@ function refreshTray() {
     },
     { type: 'separator' },
     { label: 'Show recorder', click: showPanel },
-    { label: 'Open recordings folder', click: openOutputDir },
+    { label: 'Open recordings folder', click: () => shell.openPath(outputDir()) },
     { type: 'separator' },
     { label: 'Exit', click: () => { app.isQuitting = true; app.quit(); } }
   ]));
@@ -172,11 +230,6 @@ function refreshTray() {
 function showPanel() {
   if (!controlWindow) createControlWindow();
   else { controlWindow.show(); controlWindow.focus(); }
-}
-
-function openOutputDir() {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  shell.openPath(OUTPUT_DIR);
 }
 
 function send(channel, payload) {
@@ -192,8 +245,9 @@ function registerHotkeys() {
     'CommandOrControl+Shift+X': 'stop'
   };
   for (const [combo, action] of Object.entries(map)) {
-    const ok = globalShortcut.register(combo, () => send('hotkey', action));
-    if (!ok) console.warn(`Hotkey unavailable (already taken): ${combo}`);
+    if (!globalShortcut.register(combo, () => send('hotkey', action))) {
+      console.warn(`Hotkey unavailable: ${combo}`);
+    }
   }
 }
 
@@ -206,7 +260,6 @@ ipcMain.handle('sources:list', async () => {
     types: ['screen', 'window'],
     thumbnailSize: { width: 0, height: 0 }
   });
-
   const displays = screen.getAllDisplays();
 
   return sources
@@ -214,28 +267,48 @@ ipcMain.handle('sources:list', async () => {
     .map((s) => {
       const kind = s.id.startsWith('screen') ? 'screen' : 'window';
       let metrics = null;
-
       if (kind === 'screen') {
         const d = displays.find((dd) => String(dd.id) === String(s.display_id))
           || screen.getPrimaryDisplay();
-        // workArea already excludes the taskbar, which is exactly what
-        // "full screen without taskbar" needs — no guessing at its height.
         metrics = { bounds: d.bounds, workArea: d.workArea, scaleFactor: d.scaleFactor };
       }
-
       return { id: s.id, name: s.name, displayId: s.display_id || null, kind, metrics };
     });
 });
 
 ipcMain.handle('region:select', async (_e, displayId) => openRegionOverlay(displayId));
+ipcMain.handle('border:show', async (_e, { displayId, region }) => showBorder(displayId, region));
+ipcMain.handle('border:hide', async () => hideBorder());
 
-ipcMain.handle('settings:get', async () => readSettings());
+ipcMain.handle('settings:get', async () => ({ ...readSettings(), savePath: outputDir() }));
 ipcMain.handle('settings:set', async (_e, patch) => writeSettings(patch));
 
-ipcMain.handle('file:begin', async () => {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+ipcMain.handle('settings:chooseFolder', async () => {
+  const res = await dialog.showOpenDialog(controlWindow, {
+    title: 'Choose where recordings are saved',
+    defaultPath: outputDir(),
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (res.canceled || !res.filePaths.length) return null;
+
+  const dir = res.filePaths[0];
+  try {
+    // Prove it is writable now rather than failing mid-recording.
+    const probe = path.join(dir, `.screenrec-${Date.now()}`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+  } catch {
+    return { error: 'That folder is not writable. Pick another one.' };
+  }
+
+  writeSettings({ savePath: dir });
+  return { path: dir };
+});
+
+ipcMain.handle('file:begin', async (_e, { ext }) => {
+  const dir = outputDir();
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  currentPath = path.join(OUTPUT_DIR, `recording-${stamp}.webm`);
+  currentPath = path.join(dir, `recording-${stamp}.${ext || 'webm'}`);
   writeStream = fs.createWriteStream(currentPath);
   bytesWritten = 0;
   return { path: currentPath };
@@ -246,12 +319,11 @@ ipcMain.handle('file:chunk', async (_e, arrayBuffer) => {
   const buf = Buffer.from(arrayBuffer);
   bytesWritten += buf.length;
   await new Promise((res, rej) =>
-    writeStream.write(buf, (err) => (err ? rej(err) : res()))
-  );
+    writeStream.write(buf, (err) => (err ? rej(err) : res())));
   return { ok: true, bytes: bytesWritten };
 });
 
-ipcMain.handle('file:end', async (_e, { toMp4 }) => {
+ipcMain.handle('file:end', async (_e, { toMp4, fps }) => {
   if (!writeStream) return { path: null };
   await new Promise((res) => writeStream.end(res));
   writeStream = null;
@@ -263,7 +335,7 @@ ipcMain.handle('file:end', async (_e, { toMp4 }) => {
 
   try {
     const mp4Path = webmPath.replace(/\.webm$/, '.mp4');
-    await convertToMp4(webmPath, mp4Path);
+    await convertToMp4(webmPath, mp4Path, fps || 30);
     fs.unlinkSync(webmPath);
     return { path: mp4Path, converted: true };
   } catch (err) {
@@ -274,7 +346,7 @@ ipcMain.handle('file:end', async (_e, { toMp4 }) => {
 
 ipcMain.handle('file:reveal', async (_e, filePath) => {
   if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
-  else openOutputDir();
+  else shell.openPath(outputDir());
 });
 
 ipcMain.handle('file:play', async (_e, filePath) => {
@@ -289,12 +361,10 @@ ipcMain.handle('state:set', async (_e, state) => {
       const icon = trayIcon();
       const live = state === 'recording' && !icon.isEmpty();
       controlWindow.setOverlayIcon(live ? icon : null, live ? 'Recording' : '');
-    } catch { /* Windows-only decoration; never fatal */ }
+    } catch { /* Windows-only decoration */ }
   }
 });
 
-// While recording, the panel shrinks to a small timecode bar and moves to a
-// corner — a full settings dialog left open would end up inside the video.
 ipcMain.handle('window:compact', async (_e, compact) => {
   if (!controlWindow || controlWindow.isDestroyed()) return;
   const size = compact ? COMPACT_SIZE : PANEL_SIZE;
@@ -313,7 +383,6 @@ ipcMain.handle('window:compact', async (_e, compact) => {
 
 ipcMain.handle('window:minimize', () => controlWindow && controlWindow.minimize());
 ipcMain.handle('window:hide', () => controlWindow && controlWindow.hide());
-ipcMain.handle('app:outputDir', () => OUTPUT_DIR);
 
 ipcMain.on('region:cancel', () => {
   if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.close();
@@ -324,22 +393,25 @@ ipcMain.on('region:cancel', () => {
 /* ------------------------------------------------------------------ */
 
 function ffmpegPath() {
-  try {
-    return require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
-  } catch {
-    return null;
-  }
+  try { return require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked'); }
+  catch { return null; }
 }
 
-function convertToMp4(input, output) {
+function convertToMp4(input, output, fps) {
   return new Promise((resolve, reject) => {
     const bin = ffmpegPath();
     if (!bin || !fs.existsSync(bin)) {
-      return reject(new Error('ffmpeg not found; keeping .webm'));
+      return reject(new Error('ffmpeg not found; keeping WebM'));
     }
     const args = [
-      '-y', '-i', input,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21',
+      '-y',
+      '-fflags', '+genpts',      // MediaRecorder output has no duration header
+      '-i', input,
+      // The browser records variable frame rate. Forcing a constant rate here
+      // is what keeps audio and video aligned in the MP4.
+      '-vf', `fps=${fps}`,
+      '-vsync', 'cfr',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-b:a', '160k',
       '-movflags', '+faststart',
@@ -354,8 +426,7 @@ function convertToMp4(input, output) {
     });
     proc.on('error', reject);
     proc.on('close', (code) =>
-      code === 0 ? resolve(output) : reject(new Error(`ffmpeg exited ${code}`))
-    );
+      code === 0 ? resolve(output) : reject(new Error(`ffmpeg exited ${code}`)));
   });
 }
 
@@ -377,8 +448,6 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-// A listener here stops Electron's default quit-on-last-window,
-// which is what keeps the tray icon and hotkeys alive.
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { app.isQuitting = true; });
+app.on('before-quit', () => { app.isQuitting = true; hideBorder(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());

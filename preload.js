@@ -6,15 +6,18 @@ contextBridge.exposeInMainWorld('api', {
   listSources: () => ipcRenderer.invoke('sources:list'),
   selectRegion: (displayId) => ipcRenderer.invoke('region:select', displayId),
 
+  showBorder: (opts) => ipcRenderer.invoke('border:show', opts),
+  hideBorder: () => ipcRenderer.invoke('border:hide'),
+
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+  chooseFolder: () => ipcRenderer.invoke('settings:chooseFolder'),
 
-  beginFile: () => ipcRenderer.invoke('file:begin'),
+  beginFile: (opts) => ipcRenderer.invoke('file:begin', opts),
   writeChunk: (arrayBuffer) => ipcRenderer.invoke('file:chunk', arrayBuffer),
   endFile: (opts) => ipcRenderer.invoke('file:end', opts),
   reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
   play: (filePath) => ipcRenderer.invoke('file:play', filePath),
-  outputDir: () => ipcRenderer.invoke('app:outputDir'),
 
   setState: (state) => ipcRenderer.invoke('state:set', state),
   setCompact: (compact) => ipcRenderer.invoke('window:compact', compact),
@@ -24,7 +27,6 @@ contextBridge.exposeInMainWorld('api', {
   onHotkey: (cb) => ipcRenderer.on('hotkey', (_e, action) => cb(action)),
   onConvertProgress: (cb) => ipcRenderer.on('convert:progress', (_e, t) => cb(t)),
 
-  // Region overlay only.
   sendRegion: (rect) => ipcRenderer.send('region:result', rect),
   cancelRegion: () => ipcRenderer.send('region:cancel')
 });
