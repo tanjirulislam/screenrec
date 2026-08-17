@@ -1,7 +1,7 @@
 {
   "name": "screenrec",
   "productName": "ScreenRec",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Windows screen recorder with region capture, webcam overlay, system audio and global hotkeys",
   "main": "main.js",
   "license": "MIT",
@@ -56,7 +56,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "ScreenRec",
       "uninstallDisplayName": "ScreenRec",
-      "artifactName": "${productName}-${version}-Setup.${ext}"
+      "artifactName": "${productName}-${version}-Setup.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.${ext}"

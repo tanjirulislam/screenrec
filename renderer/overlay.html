@@ -34,7 +34,14 @@
       font-size: 13px; font-weight: 600;
       box-shadow: 0 6px 24px rgba(0, 20, 45, .28);
     }
-    #prompt em { font-style: normal; color: #6B7C93; font-weight: 400; }
+    #cancel {
+      position: fixed; top: 32px; right: 32px;
+      padding: 10px 20px; border: 0; border-radius: 8px;
+      background: #fff; color: #003380;
+      font-family: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; box-shadow: 0 6px 24px rgba(0, 20, 45, .28);
+    }
+    #cancel:hover { background: #DC2626; color: #fff; }
   </style>
 </head>
 <body>
@@ -44,7 +51,8 @@
   <div class="shade" id="sh-right"></div>
   <div id="box"></div>
   <div id="dims"></div>
-  <div id="prompt">Drag to choose the area &nbsp;<em>Esc to cancel</em></div>
+  <div id="prompt">Drag to choose the area</div>
+  <button id="cancel" type="button">Cancel</button>
 
   <script>
     const box = document.getElementById('box');
@@ -73,11 +81,24 @@
       dims.style.top = (below + 26 < H ? below : Math.max(0, y - 30)) + 'px';
     }
 
+    document.getElementById('cancel').addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      window.api.cancelRegion();
+    });
+
+    // Right click cancels too, which is what most capture tools do.
+    window.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      window.api.cancelRegion();
+    });
+
     window.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
       dragging = true;
       startX = e.clientX; startY = e.clientY;
       box.style.display = 'block'; dims.style.display = 'block';
       prompt.style.display = 'none';
+      document.getElementById('cancel').style.display = 'none';
       document.body.style.background = 'transparent';
       layout(startX, startY, 0, 0);
     });

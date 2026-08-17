@@ -82,12 +82,10 @@ function createControlWindow() {
   controlWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   controlWindow.once('ready-to-show', () => controlWindow.show());
 
-  // Keeps the recorder's own window out of the video it is recording.
-  controlWindow.setContentProtection(true);
-
-  controlWindow.on('close', (e) => {
-    if (!app.isQuitting) { e.preventDefault(); controlWindow.hide(); }
-  });
+  // No preventDefault here. The titlebar close button hides to tray over
+  // IPC, so any close event reaching this point came from Windows or an
+  // installer, and must be allowed to proceed.
+  controlWindow.on('close', () => { hideBorder(); });
 
   controlWindow.on('closed', () => { controlWindow = null; });
 }
@@ -120,10 +118,22 @@ function openRegionOverlay(displayId) {
     overlayWindow.setContentProtection(true);
     overlayWindow.loadFile(path.join(__dirname, 'renderer', 'overlay.html'));
 
+    // Without an explicit focus the overlay never sees the Escape key.
+    overlayWindow.once('ready-to-show', () => {
+      overlayWindow.show();
+      overlayWindow.focus();
+      overlayWindow.webContents.focus();
+    });
+
+    // Last resort: if focus is stolen, Escape still cannot get through, so
+    // give the overlay a hard time limit rather than trapping the screen.
+    const escapeHatch = setTimeout(() => finish(null), 60000);
+
     let settled = false;
     const finish = (result) => {
       if (settled) return;
       settled = true;
+      clearTimeout(escapeHatch);
       ipcMain.removeListener('region:result', onResult);
       if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.close();
       overlayWindow = null;
@@ -365,6 +375,12 @@ ipcMain.handle('file:play', async (_e, filePath) => {
 ipcMain.handle('state:set', async (_e, state) => {
   uiState = state;
   refreshTray();
+
+  // Only hide the window from capture while a recording is running, so the
+  // app can still be screenshotted normally the rest of the time.
+  if (controlWindow && !controlWindow.isDestroyed()) {
+    controlWindow.setContentProtection(state !== 'idle');
+  }
   if (controlWindow && !controlWindow.isDestroyed()) {
     try {
       const icon = trayIcon();

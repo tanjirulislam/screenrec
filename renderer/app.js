@@ -128,7 +128,14 @@ function resolveCrop(mode, source, frameW, frameH) {
 
   if (mode === 'notaskbar') {
     const m = source && source.metrics;
-    if (!m) return whole;
+    if (!m) {
+      setStatusBar('Could not read the taskbar size, recording the whole screen.', 'error');
+      return whole;
+    }
+    if (m.workArea.width >= m.bounds.width && m.workArea.height >= m.bounds.height) {
+      setStatusBar('No taskbar detected on this screen, recording it in full.', 'error');
+      return whole;
+    }
     // workArea is the desktop minus the taskbar, wherever it sits.
     return {
       x: Math.round(((m.workArea.x - m.bounds.x) / m.bounds.width) * frameW),
@@ -211,6 +218,7 @@ async function startRecording() {
   const fps = Number(el.fps.value);
 
   try {
+    await loadSources();
     const wantSystemAudio = el.sysAudio.checked;
 
     const screenStream = await navigator.mediaDevices.getUserMedia({
@@ -266,20 +274,24 @@ async function startRecording() {
     el.stage.height = crop.h;
     const ctx = el.stage.getContext('2d', { alpha: false, desynchronized: true });
 
-    // captureStream(0) captures only frames we explicitly request, so this
-    // fixed-rate timer drives the video timeline. requestAnimationFrame was
-    // the old approach: it stalls whenever the window is covered, which
-    // starved the recording of frames and made playback run in slow motion.
-    const canvasStream = el.stage.captureStream(0);
-    const videoTrack = canvasStream.getVideoTracks()[0];
-
     const drawFrame = () => {
       ctx.drawImage(el.screenVideo, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
       if (camStream) drawCamera(ctx, crop);
-      if (videoTrack.requestFrame) videoTrack.requestFrame();
     };
 
+    // Paint once before capturing. A canvas that has never been drawn to can
+    // hand back a track that produces no frames at all, which is how a
+    // recording ends up with audio and no video.
     drawFrame();
+
+    // captureStream(fps) samples the canvas at a fixed rate on its own, which
+    // yields constant frame rate video. The interval below keeps the canvas
+    // contents fresh; it replaced requestAnimationFrame, which Chromium stalls
+    // whenever the window is covered.
+    const canvasStream = el.stage.captureStream(fps);
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    if (!videoTrack) throw new Error('Could not start capturing the screen. Try again.');
+
     state.drawTimer = setInterval(drawFrame, Math.round(1000 / fps));
 
     const audioTracks = [];
@@ -349,13 +361,23 @@ async function startRecording() {
     state.recorder = recorder;
     recorder.start(2000);
 
-    if (el.showBorder.checked && source) {
+    // If no video data appears in the first few seconds something is wrong
+    // with the source; say so rather than producing an unplayable file.
+    setTimeout(() => {
+      if (state.status !== 'idle' && videoTrack.readyState !== 'live') {
+        setStatusBar('The screen source stopped responding.', 'error');
+      }
+    }, 3000);
+
+    if (el.showBorder.checked && source && mode !== 'window') {
       window.api.showBorder({
         displayId: source.displayId,
         region: cropAsRegion(mode, source, frameW, frameH)
       });
       state.borderShown = true;
     }
+
+    console.log(`Capturing ${crop.w}x${crop.h} from a ${frameW}x${frameH} source, mode=${mode}`);
 
     state.startedAt = Date.now();
     state.pausedMs = 0;
