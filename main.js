@@ -142,7 +142,7 @@ function openRegionOverlay(displayId) {
 /**
  * A click-through frame drawn around whatever is being captured, so it is
  * obvious that recording is live. Content protection keeps it out of the
- * video itself — the border is for the person, not the viewer.
+ * video itself, the border is for the person, not the viewer.
  */
 function showBorder(displayId, region) {
   hideBorder();
@@ -205,9 +205,9 @@ function refreshTray() {
   if (!tray) return;
   const label = { idle: 'Ready', recording: 'Recording', paused: 'Paused' }[uiState];
 
-  tray.setToolTip(`ScreenRec — ${label}`);
+  tray.setToolTip(`ScreenRec, ${label}`);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `ScreenRec — ${label}`, enabled: false },
+    { label: `ScreenRec, ${label}`, enabled: false },
     { type: 'separator' },
     {
       label: uiState === 'idle' ? 'Start recording' : 'Stop recording',
@@ -305,10 +305,10 @@ ipcMain.handle('settings:chooseFolder', async () => {
   return { path: dir };
 });
 
-ipcMain.handle('file:begin', async (_e, { ext }) => {
+ipcMain.handle('file:begin', async () => {
   const dir = outputDir();
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  currentPath = path.join(dir, `recording-${stamp}.${ext || 'webm'}`);
+  currentPath = path.join(dir, `recording-${stamp}.part`);
   writeStream = fs.createWriteStream(currentPath);
   bytesWritten = 0;
   return { path: currentPath };
@@ -323,24 +323,33 @@ ipcMain.handle('file:chunk', async (_e, arrayBuffer) => {
   return { ok: true, bytes: bytesWritten };
 });
 
-ipcMain.handle('file:end', async (_e, { toMp4, fps }) => {
+ipcMain.handle('file:end', async (_e, { format, fps }) => {
   if (!writeStream) return { path: null };
   await new Promise((res) => writeStream.end(res));
   writeStream = null;
 
-  const webmPath = currentPath;
+  const raw = currentPath;
   currentPath = null;
+  if (!raw || !fs.existsSync(raw) || fs.statSync(raw).size === 0) {
+    return { path: null };
+  }
 
-  if (!toMp4) return { path: webmPath, converted: false };
+  const wantMp4 = format === 'mp4';
+  const final = raw.replace(/\.part$/, wantMp4 ? '.mp4' : '.webm');
 
   try {
-    const mp4Path = webmPath.replace(/\.webm$/, '.mp4');
-    await convertToMp4(webmPath, mp4Path, fps || 30);
-    fs.unlinkSync(webmPath);
-    return { path: mp4Path, converted: true };
+    if (wantMp4) await transcodeMp4(raw, final, fps || 30);
+    else await remuxWebm(raw, final);
+    fs.unlinkSync(raw);
+    return { path: final };
   } catch (err) {
-    console.error('MP4 conversion failed:', err);
-    return { path: webmPath, converted: false, error: String(err.message || err) };
+    console.error('Post-processing failed:', err);
+    // Never strand the recording: keep the raw bytes under a playable name.
+    try { fs.renameSync(raw, final.replace(/\.mp4$/, '.webm')); } catch {}
+    return {
+      path: final.replace(/\.mp4$/, '.webm'),
+      warning: 'Saved without re-encoding. Some players may show the wrong length.'
+    };
   }
 });
 
@@ -397,37 +406,43 @@ function ffmpegPath() {
   catch { return null; }
 }
 
-function convertToMp4(input, output, fps) {
+function runFfmpeg(args, label) {
   return new Promise((resolve, reject) => {
     const bin = ffmpegPath();
-    if (!bin || !fs.existsSync(bin)) {
-      return reject(new Error('ffmpeg not found; keeping WebM'));
-    }
-    const args = [
-      '-y',
-      '-fflags', '+genpts',      // MediaRecorder output has no duration header
-      '-i', input,
-      // The browser records variable frame rate. Forcing a constant rate here
-      // is what keeps audio and video aligned in the MP4.
-      '-vf', `fps=${fps}`,
-      '-vsync', 'cfr',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-      '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '160k',
-      '-movflags', '+faststart',
-      output
-    ];
+    if (!bin || !fs.existsSync(bin)) return reject(new Error('ffmpeg not found'));
+
     const proc = spawn(bin, args, { windowsHide: true });
     let stderr = '';
     proc.stderr.on('data', (d) => {
       stderr += d.toString();
       const m = /time=(\d+):(\d+):(\d+)/.exec(stderr.slice(-400));
-      if (m) send('convert:progress', `${m[1]}:${m[2]}:${m[3]}`);
+      if (m) send('convert:progress', { label, time: `${m[1]}:${m[2]}:${m[3]}` });
     });
     proc.on('error', reject);
     proc.on('close', (code) =>
-      code === 0 ? resolve(output) : reject(new Error(`ffmpeg exited ${code}`)));
+      code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`)));
   });
+}
+
+// Rewrites the container only. Takes a second or two even for long
+// recordings, and gives the file the duration MediaRecorder leaves out.
+function remuxWebm(input, output) {
+  return runFfmpeg(
+    ['-y', '-fflags', '+genpts', '-i', input, '-c', 'copy', '-f', 'webm', output],
+    'Finishing'
+  );
+}
+
+function transcodeMp4(input, output, fps) {
+  return runFfmpeg([
+    '-y', '-fflags', '+genpts', '-i', input,
+    '-vf', `fps=${fps}`, '-vsync', 'cfr',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart',
+    output
+  ], 'Converting');
 }
 
 /* ------------------------------------------------------------------ */

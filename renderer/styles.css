@@ -1,4 +1,4 @@
-/* ScreenRec — navy chrome, light workspace.
+/* ScreenRec, navy chrome, light workspace.
    #00B1FF marks anything live or selected; #003380 is the frame around it. */
 
 :root {
@@ -22,10 +22,14 @@
   --text-faint:  #8D9BB0;
   --on-navy:     #C7D9F5;
 
-  --rec:         #E0334B;
-  --warn:        #E8A317;
+  --rec:         #DC2626;
+  --rec-press:   #B91C1C;
+  --rec-tint:    #FEF2F2;
+  --warn:        #D97706;
+  --ok:          #16A34A;
 
   --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --pad: 16px;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
@@ -147,19 +151,19 @@ body {
   align-items: center;
   gap: 10px;
   padding: 0 20px 0 14px;
-  background: var(--brand);
+  background: var(--rec);
   border: 0;
   border-radius: 7px;
   color: #fff;
   font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.35);
 }
 
-.rec-btn:hover { background: var(--brand-press); }
+.rec-btn:hover { background: var(--rec-press); }
 .rec-btn:active { transform: translateY(1px); }
 
 .rec-ring {
@@ -215,7 +219,7 @@ body {
 
 .nav-item.subtle { font-size: 12.5px; opacity: 0.8; }
 
-.content { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 18px 22px 20px; }
+.content { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 22px 24px 24px; }
 .content::-webkit-scrollbar { width: 10px; }
 .content::-webkit-scrollbar-thumb { background: #CBD6E2; border-radius: 5px; border: 3px solid var(--bg); }
 
@@ -223,15 +227,15 @@ body {
 .page.active { display: block; animation: fade 140ms ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(3px); } }
 
-.page-head { margin-bottom: 14px; }
-.page-head h1 { margin: 0 0 3px; font-size: 19px; font-weight: 650; color: var(--navy); letter-spacing: -0.01em; }
-.page-head p { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+.page-head { margin-bottom: 18px; }
+.page-head h1 { margin: 0 0 5px; font-size: 20px; font-weight: 650; color: var(--navy); letter-spacing: -0.01em; }
+.page-head p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
 
 /* ---------- Panels ---------- */
 
 .panel {
-  margin-bottom: 12px;
-  padding: 14px 16px;
+  margin-bottom: 14px;
+  padding: var(--pad) 18px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -241,7 +245,7 @@ body {
 .field.third { max-width: 200px; }
 .field-label { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-faint); }
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .inline { display: flex; align-items: center; gap: 8px; }
 .inline > .readout-box { flex: 1 1 auto; min-width: 0; }
 .sub { margin-left: 26px; margin-top: 6px; width: calc(100% - 26px); }
@@ -278,7 +282,7 @@ body {
 
 .path { direction: rtl; text-align: left; font-family: var(--mono); font-size: 11.5px; }
 
-.note { margin: 9px 0 0; font-size: 11.5px; color: var(--text-faint); line-height: 1.5; }
+.note { margin: 10px 0 0; font-size: 12px; color: var(--text-faint); line-height: 1.5; }
 
 .switch {
   display: flex;
@@ -294,7 +298,7 @@ body {
 .switch input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--brand); cursor: pointer; flex: none; }
 .switch span { display: flex; flex-direction: column; gap: 2px; }
 .switch strong { font-weight: 550; }
-.switch em { font-style: normal; font-size: 11.5px; color: var(--text-faint); line-height: 1.45; }
+.switch em { font-style: normal; font-size: 12px; color: var(--text-dim); line-height: 1.5; }
 
 .summary {
   margin-top: 4px;
@@ -347,21 +351,46 @@ kbd {
 .btn.small { padding: 8px 13px; font-size: 12.5px; flex: none; }
 .btn.wide { width: 100%; }
 
-.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
-.btn.primary:hover:not(:disabled) { background: var(--brand-press); border-color: var(--brand-press); }
+.btn.primary { background: var(--rec); border-color: var(--rec); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--rec-press); border-color: var(--rec-press); }
 
 /* ---------- Status bar ---------- */
 
 .statusbar {
   flex: none;
-  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
   background: var(--surface);
   border-top: 1px solid var(--line);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-faint);
 }
 
 .statusbar.error { color: var(--rec); font-weight: 600; }
+.statusbar.ok { color: var(--text-dim); }
+
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--text-faint); }
+.status-dot.ok { background: var(--ok); }
+.status-dot.error { background: var(--rec); }
+
+.link-btn {
+  margin-left: auto;
+  padding: 3px 8px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--brand);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-btn:hover { background: var(--brand-tint); }
+
+.busy-sub { margin: 4px 0 0; font-size: 12px; color: var(--text-faint); }
 
 /* ---------- Countdown / recording / busy / done ---------- */
 
@@ -407,7 +436,7 @@ kbd {
 
 .filesize { font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); }
 
-#view-busy, #view-done { flex: 1 1 auto; display: grid; place-items: center; padding: 18px; }
+#view-busy { flex: 1 1 auto; display: grid; place-items: center; padding: 18px; }
 .centred { text-align: center; width: 100%; max-width: 320px; color: var(--text-dim); }
 
 .spinner {
@@ -420,17 +449,8 @@ kbd {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.check {
-  width: 48px; height: 48px; margin: 0 auto 12px;
-  border-radius: 50%; background: var(--brand-tint);
-  display: grid; place-items: center;
-}
 
-.check svg { width: 25px; height: 25px; stroke: var(--brand); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 
-.done-title { margin: 0 0 3px; font-weight: 650; font-size: 15px; color: var(--navy); }
-.done-file { margin: 0 0 14px; font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); word-break: break-all; }
-.done .grid-2 { margin-bottom: 8px; }
 
 /* ---------- Meter ---------- */
 

@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   views: {
     setup: $('view-setup'), countdown: $('view-countdown'),
-    recording: $('view-recording'), busy: $('view-busy'), done: $('view-done')
+    recording: $('view-recording'), busy: $('view-busy')
   },
   modes: $('modes'), nav: $('nav'),
   modeTitle: $('mode-title'), modeDesc: $('mode-desc'), summary: $('summary'),
@@ -23,8 +23,8 @@ const el = {
   recordBtn: $('btn-record'), pauseBtn: $('btn-pause'), stopBtn: $('btn-stop'),
   countNumber: $('count-number'), cancelCount: $('btn-cancel-count'),
   tally: $('tally'), timecode: $('timecode'), filesize: $('filesize'),
-  busyText: $('busy-text'), doneFile: $('done-file'),
-  playBtn: $('btn-play'), showBtn: $('btn-show'), againBtn: $('btn-again'),
+  busyText: $('busy-text'), busySub: $('busy-sub'),
+  statusDot: $('status-dot'), statusAction: $('btn-status-action'),
   hint: $('hint'), meter: $('meter'),
   stage: $('stage'), screenVideo: $('screen-video'), camVideo: $('cam-video')
 };
@@ -56,7 +56,9 @@ const state = {
   pauseStartedAt: 0,
   tick: 0,
   outPath: null,
-  borderShown: false
+  borderShown: false,
+  writeQueue: Promise.resolve(),
+  writeFailed: null
 };
 
 const DEFAULT_HINT = 'Press Ctrl+Shift+R anywhere to start or stop';
@@ -77,7 +79,7 @@ async function loadSources() {
   el.screenSource.innerHTML = '';
   screens.forEach((s, i) =>
     el.screenSource.appendChild(new Option(
-      screens.length > 1 ? `Screen ${i + 1} — ${s.name}` : s.name, s.id)));
+      screens.length > 1 ? `Screen ${i + 1}, ${s.name}` : s.name, s.id)));
 
   el.windowSource.innerHTML = '';
   if (!windows.length) el.windowSource.appendChild(new Option('No open windows found', ''));
@@ -198,7 +200,7 @@ async function startRecording() {
   }
 
   if (mode === 'repeat' && !state.lastRegion) {
-    return setHint('No saved area yet — use Select area once first.', true);
+    return setHint('No saved area yet, use Select area once first.', true);
   }
 
   if (el.countdownOn.checked) {
@@ -305,7 +307,7 @@ async function startRecording() {
     }
 
     if (wantSystemAudio && !screenStream.getAudioTracks().length) {
-      setHint('Computer sound is unavailable for this source — recording video only.', true);
+      setHint('Computer sound is unavailable for this source, recording video only.', true);
     }
 
     const recorder = new MediaRecorder(new MediaStream([videoTrack, ...audioTracks]), {
@@ -314,14 +316,27 @@ async function startRecording() {
       audioBitsPerSecond: 128000
     });
 
-    const { path } = await window.api.beginFile({ ext: 'webm' });
+    const { path } = await window.api.beginFile();
     state.outPath = path;
 
-    recorder.ondataavailable = async (e) => {
+    // Chunks must reach disk in the order MediaRecorder emits them. The
+    // handler is deliberately synchronous: it appends to a promise chain
+    // rather than awaiting, so two chunks can never be in flight at once.
+    state.writeQueue = Promise.resolve();
+    state.writeFailed = null;
+
+    recorder.ondataavailable = (e) => {
       if (!e.data || !e.data.size) return;
-      const buf = await e.data.arrayBuffer();
-      const res = await window.api.writeChunk(buf);
-      if (res && res.bytes) el.filesize.textContent = formatBytes(res.bytes);
+      const blob = e.data;
+      state.writeQueue = state.writeQueue.then(async () => {
+        if (state.writeFailed) return;
+        const buf = await blob.arrayBuffer();
+        const res = await window.api.writeChunk(buf);
+        if (res && res.bytes) el.filesize.textContent = formatBytes(res.bytes);
+      }).catch((err) => {
+        state.writeFailed = err;
+        console.error('Chunk write failed:', err);
+      });
     };
 
     recorder.onerror = (ev) =>
@@ -413,24 +428,34 @@ async function stopRecording() {
   recorder.stop();
   await finished;
 
+  showView('busy');
+  el.busyText.textContent = 'Saving';
+  el.busySub.textContent = 'Writing the last few seconds';
+
   await cleanup();
 
-  const toMp4 = el.format.value === 'mp4';
-  showView('busy');
-  el.busyText.textContent = toMp4 ? 'Converting to MP4…' : 'Saving…';
+  // Every queued chunk has to land before the file is closed.
+  try { await state.writeQueue; } catch { /* recorded below */ }
 
-  const result = await window.api.endFile({ toMp4, fps: Number(el.fps.value) });
+  const format = el.format.value;
+  el.busyText.textContent = format === 'mp4' ? 'Converting to MP4' : 'Finishing';
+  el.busySub.textContent = format === 'mp4'
+    ? 'This takes about as long as the recording'
+    : 'Just a moment';
+
+  const result = await window.api.endFile({ format, fps: Number(el.fps.value) });
   state.outPath = result.path;
 
   state.status = 'idle';
   window.api.setState('idle');
   window.api.setCompact(false);
+  showView('setup');
 
-  if (!result.path) { showView('setup'); return setHint('Nothing was recorded.', true); }
+  if (!result.path) return setStatusBar('Nothing was recorded.', 'error');
+  if (state.writeFailed) return setStatusBar('Recording saved, but some data was dropped.', 'error');
+  if (result.warning) return setStatusBar(result.warning, 'error');
 
-  setHint(result.error ? `Saved as WebM — ${result.error}` : '', Boolean(result.error));
-  el.doneFile.textContent = result.path;
-  showView('done');
+  setStatusBar(`Saved ${result.path.split(/[\\/]/).pop()}`, 'ok');
 }
 
 async function cleanup() {
@@ -514,10 +539,17 @@ function runMeter() {
 
 const resetMeter = () => bars.forEach((b) => { b.style.height = '2px'; b.className = ''; });
 
-function setHint(text, isError = false) {
+function setStatusBar(text, kind) {
   el.hint.textContent = text || DEFAULT_HINT;
-  el.hint.parentElement.classList.toggle('error', Boolean(text) && isError);
+  const bar = el.hint.parentElement;
+  bar.classList.toggle('error', kind === 'error');
+  bar.classList.toggle('ok', kind === 'ok');
+  el.statusDot.hidden = !kind;
+  el.statusDot.className = `status-dot ${kind || ''}`;
+  el.statusAction.hidden = !(kind && state.outPath);
 }
+
+const setHint = (text, isError) => setStatusBar(text, isError ? 'error' : null);
 
 function friendlyError(err) {
   const name = err && err.name;
@@ -569,7 +601,7 @@ function showPage(page) {
 function updateRegionLabel() {
   const r = state.lastRegion;
   el.regionInfo.textContent = r
-    ? `Saved area — ${Math.round(r.w * 100)}% × ${Math.round(r.h * 100)}% of the screen`
+    ? `Saved area, ${Math.round(r.w * 100)}% × ${Math.round(r.h * 100)}% of the screen`
     : 'No area chosen yet';
   const repeatBtn = el.modes.querySelector('.mode[data-mode="repeat"]');
   if (repeatBtn) repeatBtn.disabled = !r;
@@ -667,9 +699,7 @@ const openFolder = () => window.api.reveal(null);
 el.openFolder.addEventListener('click', openFolder);
 el.folderBtn.addEventListener('click', openFolder);
 
-el.playBtn.addEventListener('click', () => window.api.play(state.outPath));
-el.showBtn.addEventListener('click', () => window.api.reveal(state.outPath));
-el.againBtn.addEventListener('click', () => { showView('setup'); setHint(''); });
+el.statusAction.addEventListener('click', () => window.api.reveal(state.outPath));
 
 $('btn-min').addEventListener('click', () => window.api.minimize());
 $('btn-hide').addEventListener('click', () => window.api.hide());
@@ -680,7 +710,10 @@ window.api.onHotkey((action) => {
   else if (action === 'stop') stopRecording();
 });
 
-window.api.onConvertProgress((t) => { el.busyText.textContent = `Converting to MP4… ${t}`; });
+window.api.onConvertProgress((p) => {
+  el.busyText.textContent = p.label || 'Finishing';
+  el.busySub.textContent = p.time || '';
+});
 navigator.mediaDevices.addEventListener('devicechange', loadDevices);
 
 (async function init() {

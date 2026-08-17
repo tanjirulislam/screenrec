@@ -109,11 +109,11 @@
           <label class="field">
             <span class="field-label">Size</span>
             <select id="fixed-size" class="control">
-              <option value="1920x1080">1920 × 1080 — Full HD</option>
-              <option value="1280x720" selected>1280 × 720 — HD</option>
-              <option value="1080x1080">1080 × 1080 — Square</option>
-              <option value="1080x1920">1080 × 1920 — Vertical</option>
-              <option value="854x480">854 × 480 — Small</option>
+              <option value="1920x1080">1920 × 1080, Full HD</option>
+              <option value="1280x720" selected>1280 × 720, HD</option>
+              <option value="1080x1080">1080 × 1080, Square</option>
+              <option value="1080x1920">1080 × 1920, Vertical</option>
+              <option value="854x480">854 × 480, Small</option>
             </select>
           </label>
           <p class="note">Centred on the selected screen.</p>
@@ -124,7 +124,7 @@
             <output id="region-info" class="readout-box">No area chosen yet</output>
             <button id="btn-pick-area" class="btn small">Choose area</button>
           </div>
-          <p class="note">You can also just press REC — it will ask you to drag one.</p>
+          <p class="note">You can also just press REC, it will ask you to drag one.</p>
         </div>
 
         <div class="summary" id="summary"></div>
@@ -139,8 +139,8 @@
             <label class="field">
               <span class="field-label">File type</span>
               <select id="format" class="control">
-                <option value="webm" selected>WebM — smaller, saves instantly</option>
-                <option value="mp4">MP4 — plays anywhere</option>
+                <option value="webm" selected>WebM, smaller, saves instantly</option>
+                <option value="mp4">MP4, plays anywhere</option>
               </select>
             </label>
             <label class="field">
@@ -233,7 +233,7 @@
 
       <!-- ---------- ABOUT ---------- -->
       <section class="page" data-page="about">
-        <div class="page-head"><h1>About</h1><p>ScreenRec — version 1.1.0</p></div>
+        <div class="page-head"><h1>About</h1><p>ScreenRec, version 1.2.0</p></div>
         <div class="panel">
           <span class="field-label">Keyboard shortcuts</span>
           <table class="keys">
@@ -253,14 +253,16 @@
   </div>
 
   <footer class="statusbar">
+    <span class="status-dot" id="status-dot"></span>
     <span id="hint">Press Ctrl+Shift+R anywhere to start or stop</span>
+    <button id="btn-status-action" class="link-btn" hidden>Show file</button>
   </footer>
 </div>
 
 <!-- ================= COUNTDOWN ================= -->
 <div id="view-countdown" hidden>
   <div class="count" id="count-number">3</div>
-  <p class="count-label">Get ready…</p>
+  <p class="count-label">Get ready</p>
   <button id="btn-cancel-count" class="btn small">Cancel</button>
 </div>
 
@@ -281,21 +283,8 @@
 <div id="view-busy" hidden>
   <div class="centred">
     <div class="spinner"></div>
-    <p id="busy-text">Saving…</p>
-  </div>
-</div>
-
-<!-- ================= DONE ================= -->
-<div id="view-done" hidden>
-  <div class="centred done">
-    <div class="check"><svg viewBox="0 0 24 24"><path d="M4 12.5l5.5 5.5L20 7"/></svg></div>
-    <p class="done-title">Recording saved</p>
-    <p class="done-file" id="done-file"></p>
-    <div class="grid-2">
-      <button id="btn-play" class="btn">Play</button>
-      <button id="btn-show" class="btn">Show file</button>
-    </div>
-    <button id="btn-again" class="btn primary wide">Record again</button>
+    <p id="busy-text">Saving</p>
+    <p id="busy-sub" class="busy-sub"></p>
   </div>
 </div>
 

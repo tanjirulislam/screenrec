@@ -1,7 +1,7 @@
 {
   "name": "screenrec",
   "productName": "ScreenRec",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Windows screen recorder with region capture, webcam overlay, system audio and global hotkeys",
   "main": "main.js",
   "license": "MIT",
